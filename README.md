@@ -1,42 +1,98 @@
-# ElMariana-Clipping-Studio
-AI-powered YouTube Shorts clipping and editing studio.
 # ElMariana Clipping Studio
 
-AI-assisted video production studio for YouTube Shorts.
+Estudio de producción asistido por IA para YouTube Shorts. Convierte **videos con derechos de uso documentados** en candidatos a Shorts verticales con subtítulos dinámicos, listos para revisar y publicar.
 
-## Project
+> **Importante:** solo se procesa material con derechos de uso documentados. No hay publicación automática: cada Short se descarga y lo publica una persona después de revisarlo.
 
-A cloud-based video editing system designed to create original, engaging vertical videos from authorized source material.
+## Qué hace
 
-## Editing style
+1. **Subida** de videos MP4, MOV y MKV con la declaración de derechos obligatoria.
+2. **Análisis con FFmpeg**: duración, resolución, fps, códecs y pistas de audio.
+3. **Transcripción** local con **Faster-Whisper** (español e inglés, marcas de tiempo por palabra, CPU int8).
+4. **Detección de momentos** combinando transcripción (reacciones, preguntas, exclamaciones), contexto (frases completas), energía del audio (risas o gritos) y cambios de escena.
+5. **Clips candidatos** con puntuación de 0 a 100, razones explicadas, título sugerido, inicio y final.
+6. **Vista previa** del fragmento original y del Short editado.
+7. **Edición automática 9:16** (1080x1920): recorte centrado en la cara (OpenCV) o el video completo sobre fondo desenfocado.
+8. **Subtítulos dinámicos** palabra por palabra: la palabra actual en amarillo y las importantes en verde, dentro de márgenes seguros.
+9. **Cortes y zooms**: se recortan las pausas largas y se añaden zooms suaves en las reacciones (máximo uno cada 4 s).
+10. **Exportación MP4**: H.264 High, CRF 20, 30 fps, AAC 192k estéreo y audio normalizado a -14 LUFS en dos pasadas.
+11. **Títulos, descripción y hashtags** generados con reglas locales a partir de frases reales del clip (sin APIs de pago).
+12. **Control de calidad y derechos** antes de habilitar la descarga: la descarga solo se activa con QC **PASS** y derechos **APPROVED**.
 
-- Dynamic word-by-word subtitles.
-- Intelligent zooms.
-- Smart speaker framing.
-- Vertical 9:16 video.
-- Target resolution: 1080x1920.
-- Original commentary and contextual editing.
+## Ejecutar en GitHub Codespaces
 
-## Architecture
+1. En GitHub: **Code → Codespaces → Create codespace** (elige una máquina de 8 GB).
+   El `devcontainer` instala FFmpeg, las fuentes y las dependencias de Python de forma automática.
+2. En la terminal:
 
-- Python: backend.
-- FFmpeg: video processing.
-- Whisper: speech transcription.
-- OpenCV: visual processing.
-- Claude: AI-assisted development.
-- YouTube Data API: publishing integration.
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
 
-## Main workflow
+3. Abre el puerto **8000** desde la pestaña *Ports* (se abre solo).
 
-1. Import authorized source video.
-2. Transcribe audio.
-3. Detect interesting moments.
-4. Generate candidate clips.
-5. Add dynamic subtitles and zoom effects.
-6. Perform quality checks.
-7. Review and approve.
-8. Prepare YouTube publication.
+La primera transcripción descarga el modelo de Whisper elegido desde Hugging Face. Es gratis: *tiny* pesa unos 75 MB, *base* unos 145 MB y *small* unos 480 MB.
 
-## Important
+### Instalación manual (sin devcontainer)
 
-Only process material with documented usage rights. No automatic public publishing without human approval.
+```bash
+sudo apt-get install -y ffmpeg fonts-dejavu-core
+pip install -r requirements.txt -r requirements-dev.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+## Pruebas
+
+```bash
+pytest -q                                    # servicios, render real, QC y API
+python scripts/smoke_test.py --fake-whisper  # prueba de extremo a extremo por HTTP (33 comprobaciones)
+python scripts/smoke_test.py                 # igual, pero con Faster-Whisper real
+RUN_WHISPER_TEST=1 pytest tests/test_transcribe.py   # descarga el modelo tiny y transcribe voz sintética
+```
+
+## Configuración (variables de entorno)
+
+| Variable | Por defecto | Uso |
+|---|---|---|
+| `ELMARIANA_WHISPER_MODEL` | `base` | Modelo por defecto: `tiny`, `base` o `small` |
+| `ELMARIANA_WHISPER_THREADS` | núcleos de CPU | Hilos de Whisper |
+| `ELMARIANA_DATA_DIR` | `./data` | Dónde se guardan los proyectos |
+| `ELMARIANA_MAX_UPLOAD_MB` | `4096` | Tamaño máximo de subida |
+| `ELMARIANA_CLIP_MIN` / `ELMARIANA_CLIP_MAX` | `20` / `60` | Duración de los candidatos (s) |
+| `ELMARIANA_CRF` / `ELMARIANA_X264_PRESET` | `20` / `veryfast` | Calidad y velocidad del render |
+
+## Arquitectura
+
+```
+app/
+  main.py          API FastAPI + servidor de la interfaz
+  pipeline.py      orquesta análisis y exportación
+  storage.py       proyectos en disco (JSON, sin base de datos)
+  jobs.py          cola de un solo worker (protege los 8 GB de RAM)
+  config.py
+  services/
+    media.py       FFprobe/FFmpeg: análisis, audio, proxy de vista previa, miniaturas
+    transcribe.py  Faster-Whisper (CPU, int8, word_timestamps, VAD)
+    signals.py     energía de audio y cambios de escena
+    highlights.py  puntuación de momentos      (skill stream-highlight-finder + streamer-storytelling)
+    framing.py     encuadre 9:16 con OpenCV
+    subtitles.py   subtítulos ASS palabra por palabra
+    render.py      cortes, zooms, subtítulos y exportación (skill shorts-video-editor)
+    seo.py         títulos, descripción y hashtags    (skill youtube-seo)
+    rights.py      revisión de derechos               (skill copyright-guard)
+    quality.py     control de calidad del MP4 final   (skill youtube-quality-control)
+static/            interfaz web (HTML/CSS/JS sin dependencias)
+tests/             pytest
+scripts/smoke_test.py
+```
+
+Flujo de datos de un proyecto: `data/projects/<id>/` contiene `project.json`, `source.*`, `audio.wav`, `transcript.json`, `signals.json`, `preview.mp4` (solo cuando hace falta) y `clips/`.
+
+## Limitaciones conocidas
+
+- **La publicación en YouTube (YouTube Data API) no está implementada.** El flujo termina en la descarga del MP4, el `.srt` y el `.txt` con los metadatos.
+- **La detección de momentos usa reglas explicables, no un modelo de lenguaje.** Detecta reacciones, picos de audio y estructura, pero no "entiende" el humor. Revisa siempre los candidatos.
+- **Los títulos y descripciones también se generan con plantillas** a partir de frases reales del clip. Edítalos antes de publicar.
+- **El encuadre por cara es estático por clip** (mediana de varias muestras). No sigue a la persona si se mueve mucho.
+- **La revisión de derechos evalúa lo que declaras**, pero no puede verificar legalmente un permiso.
+- **En CPU, Whisper `base` tarda aproximadamente entre 0.3x y 1x la duración del audio**, según los núcleos. Para streams largos, usa `tiny` o recorta el video antes de subirlo.

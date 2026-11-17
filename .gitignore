@@ -221,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ElMariana Clipping Studio: datos de usuario (videos, proyectos, exportaciones)
+data/

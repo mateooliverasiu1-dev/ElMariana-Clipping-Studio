@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ElMariana Clipping Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" id="brand" title="Panel principal">
+      <span class="logo">EM</span>
+      <div><strong>ElMariana</strong><small>Clipping Studio</small></div>
+    </div>
+    <div class="health" id="health"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <button class="btn primary block" id="btnNew">＋ Nuevo proyecto</button>
+      <h3 class="side-title">Proyectos</h3>
+      <div id="projectList" class="project-list"><p class="muted small">Sin proyectos todavía.</p></div>
+    </aside>
+
+    <main id="main" class="main"></main>
+  </div>
+
+  <!-- Modal: subir video -->
+  <dialog id="uploadDialog" class="dialog">
+    <form id="uploadForm" method="dialog">
+      <header class="dialog-head">
+        <h2>Nuevo proyecto</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button>
+      </header>
+      <div class="dialog-body">
+        <label class="dropzone" id="dropzone">
+          <input type="file" name="file" id="fileInput" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" required hidden>
+          <span class="dz-icon">⬆</span>
+          <span id="dzText">Arrastra un video MP4, MOV o MKV o haz clic para elegirlo</span>
+        </label>
+        <div class="grid2">
+          <label>Nombre del proyecto<input name="name" placeholder="Opcional"></label>
+          <label>Idioma
+            <select name="language"><option value="auto">Detectar</option><option value="es">Español</option><option value="en">Inglés</option></select>
+          </label>
+          <label>Modelo Whisper
+            <select name="whisper_model"><option value="tiny">tiny (más rápido)</option><option value="base" selected>base (recomendado)</option><option value="small">small (más preciso, más lento)</option></select>
+          </label>
+          <label>Nombre del creador / streamer<input name="creator_name" placeholder="Se usa en títulos y hashtags"></label>
+        </div>
+        <fieldset class="rights-box" id="uploadRights"></fieldset>
+        <div class="upload-progress hidden" id="uploadProgress"><div class="bar"><i></i></div><span></span></div>
+        <p class="error-box hidden" id="uploadError"></p>
+      </div>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn primary" id="uploadSubmit">Subir y analizar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Modal: derechos -->
+  <dialog id="rightsDialog" class="dialog">
+    <form id="rightsForm" method="dialog">
+      <header class="dialog-head">
+        <h2>Derechos de uso</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button>
+      </header>
+      <div class="dialog-body">
+        <label>Nombre del creador / streamer<input name="creator_name"></label>
+        <fieldset class="rights-box" id="editRights"></fieldset>
+      </div>
+      <footer class="dialog-foot">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn primary">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <template id="rightsFields">
+    <legend>Autorización del material <span class="muted small">(obligatoria)</span></legend>
+    <div class="grid2">
+      <label>Fuente original<input name="source_description" placeholder="Ej. Stream del 12/11 en Twitch"></label>
+      <label>Enlace de la fuente<input name="source_url" placeholder="https://…"></label>
+      <label>Titular de los derechos<input name="rights_holder" placeholder="Quién te dio permiso"></label>
+      <label>Tipo de permiso<select name="permission_type"></select></label>
+      <label class="span2">Evidencia del permiso<textarea name="evidence" rows="2" placeholder="Enlace al correo, contrato, licencia o publicación del permiso"></textarea></label>
+      <label>¿Música de terceros?<select name="third_party_music"></select></label>
+      <label>¿Video/imágenes de terceros?<select name="third_party_footage"></select></label>
+      <label class="span2">Notas<input name="notes"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="confirmed" value="true"> Confirmo que tengo derechos documentados para usar este video.</label>
+  </template>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

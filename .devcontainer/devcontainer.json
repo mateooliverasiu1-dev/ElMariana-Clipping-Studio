@@ -1,0 +1,9 @@
+{
+  "name": "ElMariana Clipping Studio",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core espeak-ng && pip install -r requirements.txt -r requirements-dev.txt",
+  "forwardPorts": [8000],
+  "portsAttributes": { "8000": { "label": "ElMariana Studio", "onAutoForward": "openBrowser" } },
+  "customizations": { "vscode": { "extensions": ["ms-python.python"] } }
+}
