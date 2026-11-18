@@ -20,13 +20,37 @@ WORK = Path(tempfile.mkdtemp(prefix="elmariana_smoke_"))
 os.environ["ELMARIANA_DATA_DIR"] = str(WORK / "data")
 sys.path.insert(0, str(ROOT))
 
+from app.services import transcribe as T
+
+USE_FAKE = args.fake_whisper or not T.whisper_available()
+if not USE_FAKE and not shutil.which("espeak-ng"):
+    print("Aviso: falta espeak-ng (sudo apt-get install -y espeak-ng); sin voz no se puede probar Whisper real.")
+    USE_FAKE = True
+
+LINES = ["Hola chat, bienvenidos al stream de hoy.", "Hoy vamos a probar el nuevo mapa.", "Miren esto, está muy raro.",
+         "Creo que por aquí hay algo escondido.", "Espera, espera, ¿qué fue eso?", "¡No manches, jajaja, qué susto!",
+         "No puede ser, me muero de risa.", "Bueno, sigamos con la partida.", "Vamos a revisar el inventario.",
+         "Aquí tengo unas pociones y una espada.", "¿Ustedes qué harían en mi lugar?", "Escriban en el chat."]
+
 print("Generando video de prueba…")
-subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=90",
-                "-f", "lavfi", "-i", "sine=f=200:d=90", "-af", "volume='if(between(t,40,42),3.0,0.2)':eval=frame",
-                "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(WORK / "long.mp4")], check=True)
+if USE_FAKE:
+    DUR = 90.0
+    audio_in = ["-f", "lavfi", "-i", "sine=f=200:d=90"]
+    audio_filter = "volume='if(between(t,40,42),3.0,0.2)':eval=frame"
+else:
+    # Voz sintética en español para que Faster-Whisper real tenga algo que transcribir.
+    speech = WORK / "voz.wav"
+    subprocess.run(["espeak-ng", "-v", "es", "-s", "145", "-g", "8", "-w", str(speech), " ".join(LINES * 3)], check=True)
+    DUR = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                str(speech)], capture_output=True, text=True, check=True).stdout) + 2
+    peak = round(DUR * 0.45, 1)
+    audio_in = ["-i", str(speech)]
+    audio_filter = f"apad,volume='if(between(t,{peak},{peak + 3}),2.5,1)':eval=frame"
+subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=s=1280x720:r=30:d={DUR}", *audio_in,
+                "-af", audio_filter, "-t", str(DUR), "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+                str(WORK / "long.mp4")], check=True)
 subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(WORK / "long.mp4"), "-c", "copy", str(WORK / "long.mkv")], check=True)
 
-from app.services import transcribe as T
 
 def fake(audio, language="auto", model_size=None, duration=None, on_progress=None):
     segs=[]; t=1.0; k=0
@@ -40,8 +64,8 @@ def fake(audio, language="auto", model_size=None, duration=None, on_progress=Non
         segs.append({"start":t,"end":round(tt,2),"text":text,"words":words}); t=tt+(1.6 if k%4==3 else 0.35); k+=1
         if on_progress: on_progress(min(t/(duration or 90),1))
     return {"language":"es","language_probability":0.99,"model":"fake","segments":segs}
-if args.fake_whisper or not T.whisper_available():
-    print('Usando transcripción simulada' + ('' if args.fake_whisper else ' (Faster-Whisper no instalado)'))
+if USE_FAKE:
+    print('Usando transcripción simulada')
     T.transcribe = fake
 
 import uvicorn
@@ -87,7 +111,7 @@ d,hd = multipart(ok_rights, str(WORK/"fake.mp4")); s,b,_ = req("POST","/api/proj
 
 d,hd = multipart(ok_rights, str(WORK/"long.mkv"))
 s,p,_ = req("POST","/api/projects", d, hd); check("subida MKV aprobada -> 201", s==201, (s,p)); pid=p["id"]
-check("análisis FFmpeg (duración/resolución/audio)", abs(p["media"]["duration"]-90)<0.5 and p["media"]["width"]==1280 and p["media"]["has_audio"], p["media"])
+check("análisis FFmpeg (duración/resolución/audio)", abs(p["media"]["duration"]-DUR)<0.6 and p["media"]["width"]==1280 and p["media"]["has_audio"], p["media"])
 t0=time.time()
 while True:
     s,p,_=req("GET",f"/api/projects/{pid}")
@@ -97,6 +121,9 @@ check("procesamiento termina en ready", p["status"]=="ready", p["progress"]); pr
 check("se generó proxy de vista previa para MKV", os.path.exists(str(WORK/"data"/"projects"/pid/"preview.mp4")))
 clips=p["clips"]; check("hay clips candidatos", len(clips)>=1, len(clips))
 for c in clips[:5]: print("   ", c["id"], c["score"], c["start"], c["end"], "|", c["title"], "|", c["reasons"][:2])
+if not clips:
+    print("\nNo se detectaron clips: la transcripción no tiene habla suficiente.", p.get("progress"))
+    srv.should_exit = True; shutil.rmtree(WORK, ignore_errors=True); sys.exit(1)
 c=clips[0]
 check("clip con título, inicio, fin y puntuación", c["title"] and c["end"]>c["start"] and 0<=c["score"]<=100)
 check("duraciones 20-60 s", all(19<=x["duration"]<=61 for x in clips), [x["duration"] for x in clips])
