@@ -109,8 +109,27 @@ d,hd = multipart(ok_rights, str(WORK/"bad.avi")); s,b,_ = req("POST","/api/proje
 open(str(WORK/"fake.mp4"),"wb").write(b"no es video"*100)
 d,hd = multipart(ok_rights, str(WORK/"fake.mp4")); s,b,_ = req("POST","/api/projects", d, hd); check("mp4 corrupto rechazado", s==400, (s,b))
 
-d,hd = multipart(ok_rights, str(WORK/"long.mkv"))
-s,p,_ = req("POST","/api/projects", d, hd); check("subida MKV aprobada -> 201", s==201, (s,p)); pid=p["id"]
+# Subida por partes (como la interfaz; evita el 413 del túnel de Codespaces)
+src_file = WORK/"long.mkv"; size = src_file.stat().st_size
+s,init,_ = req("POST","/api/uploads", json.dumps({"filename":"long.mkv","size":size}).encode(), {"Content-Type":"application/json"})
+check("subida por partes: inicio", s==201, (s,init)); uid=init["upload_id"]
+CH = 4*1024*1024; off = 0; dup_ok = True
+with open(src_file,"rb") as fh:
+    while off < size:
+        fh.seek(off); data = fh.read(CH)
+        s,r,_ = req("PUT",f"/api/uploads/{uid}?offset={off}", data, {"Content-Type":"application/octet-stream"})
+        if s != 200: break
+        if off == 0:  # reintento del mismo trozo: no debe duplicarse
+            s2,r2,_ = req("PUT",f"/api/uploads/{uid}?offset=0", data, {"Content-Type":"application/octet-stream"})
+            dup_ok = s2==200 and r2["received"]==len(data)
+        off = r["received"]
+check("subida por partes: todos los trozos", off==size, (off,size))
+check("subida por partes: reintento sin duplicar", dup_ok)
+fields = {**ok_rights, "upload_id": uid}
+bnd = uuid.uuid4().hex
+body = b"".join(f"--{bnd}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode() for k,v in fields.items()) + f"--{bnd}--\r\n".encode()
+s,p,_ = req("POST","/api/projects", body, {"Content-Type": f"multipart/form-data; boundary={bnd}"})
+check("subida MKV aprobada -> 201", s==201, (s,p)); pid=p["id"]
 check("análisis FFmpeg (duración/resolución/audio)", abs(p["media"]["duration"]-DUR)<0.6 and p["media"]["width"]==1280 and p["media"]["has_audio"], p["media"])
 t0=time.time()
 while True:

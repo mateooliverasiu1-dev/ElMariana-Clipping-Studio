@@ -688,57 +688,98 @@ dz.addEventListener("drop", (e) => {
   if (e.dataTransfer.files[0]) setPicked(e.dataTransfer.files[0]);
 });
 
-$("#uploadForm").addEventListener("submit", (e) => {
-  e.preventDefault();
+function showUploadError(msg) {
   const errBox = $("#uploadError");
-  errBox.classList.add("hidden");
-  if (!pickedFile) {
-    errBox.textContent = "Elige un video.";
-    return errBox.classList.remove("hidden");
-  }
-  const ext = pickedFile.name.split(".").pop().toLowerCase();
-  if (!["mp4", "mov", "mkv"].includes(ext)) {
-    errBox.textContent = "Formato no permitido. Usa MP4, MOV o MKV.";
-    return errBox.classList.remove("hidden");
-  }
-  const fd = new FormData(e.target);
-  fd.set("file", pickedFile);
-  fd.set("confirmed", e.target.querySelector('[name="confirmed"]').checked ? "true" : "false");
-  const xhr = new XMLHttpRequest();
+  errBox.textContent = msg;
+  errBox.classList.remove("hidden");
+}
+
+function setUploadProgress(pct, label) {
   const prog = $("#uploadProgress");
   prog.classList.remove("hidden");
-  $("#uploadSubmit").disabled = true;
-  xhr.upload.onprogress = (ev) => {
-    if (!ev.lengthComputable) return;
-    const pct = Math.round((ev.loaded / ev.total) * 100);
-    prog.querySelector("i").style.width = pct + "%";
-    prog.querySelector("span").textContent = pct < 100 ? pct + "%" : "Analizando…";
-  };
-  xhr.onload = async () => {
-    $("#uploadSubmit").disabled = false;
-    let data = {};
-    try { data = JSON.parse(xhr.responseText); } catch (_) { /* vacío */ }
-    if (xhr.status >= 200 && xhr.status < 300) {
-      $("#uploadDialog").close();
-      toast("Video subido. Procesando…");
-      await loadProjects();
-      openProject(data.id);
-    } else {
-      const d = data.detail;
-      let msg = typeof d === "string" ? d : d && d.message ? d.message : `Error ${xhr.status}`;
-      if (d && d.required_actions) msg += "\n• " + d.required_actions.join("\n• ");
-      errBox.textContent = msg;
-      errBox.classList.remove("hidden");
-      prog.classList.add("hidden");
+  prog.querySelector("i").style.width = pct + "%";
+  prog.querySelector("span").textContent = label;
+}
+
+/* Sube el archivo en trozos: el túnel de puertos de Codespaces rechaza peticiones grandes (413). */
+async function uploadInChunks(file) {
+  const init = await api("/api/uploads", { method: "POST", body: JSON.stringify({ filename: file.name, size: file.size }) });
+  const uid = init.upload_id;
+  let chunk = Math.min(4 * 1024 * 1024, init.max_chunk_bytes);
+  let offset = 0;
+  let failures = 0;
+  const t0 = Date.now();
+  while (offset < file.size) {
+    const blob = file.slice(offset, offset + chunk);
+    let res;
+    try {
+      res = await fetch(`/api/uploads/${uid}?offset=${offset}`, {
+        method: "PUT", body: blob, headers: { "Content-Type": "application/octet-stream" },
+      });
+    } catch (_) {
+      res = null; // error de red: se reintenta
     }
-  };
-  xhr.onerror = () => {
+    if (res && res.status === 413 && chunk > 256 * 1024) {
+      chunk = Math.floor(chunk / 2); // el túnel aún lo considera grande: trozos más pequeños
+      continue;
+    }
+    if (!res || !res.ok) {
+      if (++failures > 5) {
+        const d = res ? (await res.json().catch(() => ({}))).detail : null;
+        throw new Error(typeof d === "string" ? d : `La subida se interrumpió${res ? ` (error ${res.status})` : ""}. Intenta de nuevo.`);
+      }
+      await new Promise((r) => setTimeout(r, 1000 * failures));
+      continue;
+    }
+    failures = 0;
+    offset = (await res.json()).received;
+    const pct = Math.round((offset / file.size) * 100);
+    const mbps = offset / 1e6 / Math.max((Date.now() - t0) / 1000, 0.1);
+    setUploadProgress(pct, `${pct}% · ${mbps.toFixed(1)} MB/s`);
+  }
+  return uid;
+}
+
+$("#uploadForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  $("#uploadError").classList.add("hidden");
+  if (!pickedFile) return showUploadError("Elige un video.");
+  const ext = pickedFile.name.split(".").pop().toLowerCase();
+  if (!["mp4", "mov", "mkv"].includes(ext)) return showUploadError("Formato no permitido. Usa MP4, MOV o MKV.");
+
+  const fd = new FormData(form);
+  fd.delete("file");
+  fd.set("confirmed", form.querySelector('[name="confirmed"]').checked ? "true" : "false");
+  const rightsBody = {};
+  for (const k of ["source_description", "source_url", "rights_holder", "creator_name", "permission_type",
+    "evidence", "third_party_music", "third_party_footage", "notes"]) rightsBody[k] = fd.get(k) || "";
+  rightsBody.confirmed = fd.get("confirmed") === "true";
+
+  $("#uploadSubmit").disabled = true;
+  try {
+    // 1) Derechos primero: no se sube nada si están BLOCKED.
+    const review = await api("/api/rights/evaluate", { method: "POST", body: JSON.stringify(rightsBody) });
+    if (!review.can_process) {
+      throw new Error("Derechos BLOCKED: no se puede subir este video.\n• " + review.required_actions.join("\n• "));
+    }
+    // 2) Video por partes.
+    setUploadProgress(0, "0%");
+    const uid = await uploadInChunks(pickedFile);
+    // 3) Crear el proyecto.
+    setUploadProgress(100, "Analizando…");
+    fd.set("upload_id", uid);
+    const project = await api("/api/projects", { method: "POST", body: fd });
+    $("#uploadDialog").close();
+    toast("Video subido. Procesando…");
+    await loadProjects();
+    openProject(project.id);
+  } catch (err) {
+    showUploadError(err.message);
+    $("#uploadProgress").classList.add("hidden");
+  } finally {
     $("#uploadSubmit").disabled = false;
-    errBox.textContent = "Error de red durante la subida.";
-    errBox.classList.remove("hidden");
-  };
-  xhr.open("POST", "/api/projects");
-  xhr.send(fd);
+  }
 });
 
 document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));

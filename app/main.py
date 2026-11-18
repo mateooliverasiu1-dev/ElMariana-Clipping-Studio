@@ -4,10 +4,13 @@ Ejecutar:  uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
 
+import json
 import logging
 import mimetypes
 import re
 import shutil
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -126,9 +129,107 @@ def list_projects() -> list[dict[str, Any]]:
     return out
 
 
+class RightsUpdate(BaseModel):
+    source_description: str = ""
+    source_url: str = ""
+    rights_holder: str = ""
+    creator_name: str = ""
+    permission_type: str = "none"
+    evidence: str = ""
+    third_party_music: str = "unknown"
+    third_party_footage: str = "unknown"
+    confirmed: bool = False
+    notes: str = ""
+
+
+# ---------------------------------------------------------------- subida por partes
+# El túnel de puertos de Codespaces rechaza peticiones grandes (HTTP 413), así que la
+# interfaz sube el video en trozos pequeños que el servidor une en disco.
+_UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{16,32}$")
+MAX_CHUNK_BYTES = 16 * 1024 * 1024
+
+
+def _uploads_dir() -> Path:
+    d = config.DATA_DIR / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _upload_paths(uid: str) -> tuple[Path, Path]:
+    if not _UPLOAD_ID_RE.match(uid):
+        raise HTTPException(404, "Subida no encontrada")
+    base = _uploads_dir() / uid
+    return base.with_suffix(".part"), base.with_suffix(".json")
+
+
+def _cleanup_old_uploads(max_age: float = 24 * 3600) -> None:
+    now = time.time()
+    for f in _uploads_dir().iterdir():
+        if now - f.stat().st_mtime > max_age:
+            f.unlink(missing_ok=True)
+
+
+class UploadInit(BaseModel):
+    filename: str
+    size: int = Field(..., gt=0)
+
+
+@app.post("/api/uploads", status_code=201)
+def upload_init(body: UploadInit) -> dict[str, Any]:
+    ext = Path(body.filename).suffix.lower()
+    if ext not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Formato no permitido ({ext or 'sin extensión'}). Usa MP4, MOV o MKV.")
+    if body.size > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "El archivo supera el tamaño máximo permitido.")
+    _cleanup_old_uploads()
+    uid = uuid.uuid4().hex
+    part, meta = _upload_paths(uid)
+    part.write_bytes(b"")
+    meta.write_text(json.dumps({"filename": body.filename, "size": body.size, "received": 0}), encoding="utf-8")
+    return {"upload_id": uid, "max_chunk_bytes": MAX_CHUNK_BYTES}
+
+
+@app.put("/api/uploads/{uid}")
+async def upload_chunk(uid: str, request: Request, offset: int = 0) -> dict[str, Any]:
+    """Añade un trozo. `offset` debe coincidir con lo ya recibido (permite reintentar)."""
+    part, meta = _upload_paths(uid)
+    if not meta.exists():
+        raise HTTPException(404, "Subida no encontrada")
+    info = json.loads(meta.read_text(encoding="utf-8"))
+    offset = int(offset)
+    if offset != info["received"]:
+        # Reintento de un trozo ya guardado o fuera de orden: se informa lo recibido.
+        return {"received": info["received"], "size": info["size"]}
+    data = await request.body()
+    if not data or len(data) > MAX_CHUNK_BYTES:
+        raise HTTPException(400, "Trozo vacío o demasiado grande")
+    if info["received"] + len(data) > info["size"]:
+        raise HTTPException(400, "Se recibieron más datos de los anunciados")
+    with part.open("ab") as fh:
+        fh.write(data)
+    info["received"] += len(data)
+    meta.write_text(json.dumps(info), encoding="utf-8")
+    return {"received": info["received"], "size": info["size"]}
+
+
+@app.delete("/api/uploads/{uid}", status_code=204)
+def upload_cancel(uid: str) -> Response:
+    for f in _upload_paths(uid):
+        f.unlink(missing_ok=True)
+    return Response(status_code=204)
+
+
+@app.post("/api/rights/evaluate")
+def rights_evaluate(body: RightsUpdate) -> dict[str, Any]:
+    """Revisión previa (la interfaz la usa antes de subir el video)."""
+    return rights.evaluate(body.model_dump())
+
+
+# ---------------------------------------------------------------- creación de proyectos
 @app.post("/api/projects", status_code=201)
 async def create_project(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    upload_id: str = Form(""),
     name: str = Form(""),
     language: str = Form("auto"),
     whisper_model: str = Form(config.WHISPER_DEFAULT_MODEL),
@@ -143,7 +244,21 @@ async def create_project(
     confirmed: str = Form("false"),
     notes: str = Form(""),
 ) -> dict[str, Any]:
-    ext = Path(file.filename or "").suffix.lower()
+    """Crea un proyecto con un archivo directo (`file`) o con una subida por partes (`upload_id`)."""
+    if upload_id:
+        part, meta = _upload_paths(upload_id)
+        if not meta.exists():
+            raise HTTPException(404, "Subida no encontrada o caducada")
+        up = json.loads(meta.read_text(encoding="utf-8"))
+        if up["received"] != up["size"]:
+            raise HTTPException(400, "La subida está incompleta")
+        filename = up["filename"]
+    elif file is not None and file.filename:
+        filename = file.filename
+    else:
+        raise HTTPException(400, "Falta el video")
+
+    ext = Path(filename).suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Formato no permitido ({ext or 'sin extensión'}). Usa MP4, MOV o MKV.")
     if language not in config.LANGUAGES:
@@ -159,6 +274,9 @@ async def create_project(
     review = rights.evaluate(decl)
     if not review["can_process"]:
         # No se guarda ni procesa material sin autorización.
+        if upload_id:
+            for f in _upload_paths(upload_id):
+                f.unlink(missing_ok=True)
         raise HTTPException(403, {"message": "Derechos BLOCKED: no se puede subir este video.",
                                   "required_actions": review["required_actions"]})
 
@@ -166,14 +284,19 @@ async def create_project(
     pdir = storage.project_dir(pid)
     pdir.mkdir(parents=True, exist_ok=True)
     dst = pdir / f"source{ext}"
-    written = 0
     try:
-        with dst.open("wb") as fh:
-            while chunk := await file.read(1024 * 1024):
-                written += len(chunk)
-                if written > config.MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, "El archivo supera el tamaño máximo permitido.")
-                fh.write(chunk)
+        if upload_id:
+            part, meta = _upload_paths(upload_id)
+            shutil.move(str(part), dst)
+            meta.unlink(missing_ok=True)
+        else:
+            written = 0
+            with dst.open("wb") as fh:
+                while chunk := await file.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > config.MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, "El archivo supera el tamaño máximo permitido.")
+                    fh.write(chunk)
         info = media.probe(dst)
         errors = media.validate_source(info)
         if errors:
@@ -186,8 +309,8 @@ async def create_project(
         raise HTTPException(400, f"No se pudo analizar el video: {exc}")
 
     project = storage.create_project({
-        "id": pid, "name": name.strip() or Path(file.filename or "video").stem,
-        "original_filename": file.filename, "source_file": dst.name, "media": info,
+        "id": pid, "name": name.strip() or Path(filename).stem,
+        "original_filename": filename, "source_file": dst.name, "media": info,
         "language": language, "whisper_model": whisper_model, "rights": decl, "status": "queued",
         "progress": {"stage": "queued", "percent": 0, "message": "En cola para procesar…"},
     })
@@ -207,19 +330,6 @@ def delete_project(pid: str) -> Response:
         raise HTTPException(409, "El proyecto se está procesando; espera a que termine.")
     storage.delete_project(pid)
     return Response(status_code=204)
-
-
-class RightsUpdate(BaseModel):
-    source_description: str = ""
-    source_url: str = ""
-    rights_holder: str = ""
-    creator_name: str = ""
-    permission_type: str = "none"
-    evidence: str = ""
-    third_party_music: str = "unknown"
-    third_party_footage: str = "unknown"
-    confirmed: bool = False
-    notes: str = ""
 
 
 @app.put("/api/projects/{pid}/rights")

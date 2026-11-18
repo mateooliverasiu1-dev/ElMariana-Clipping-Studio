@@ -6,7 +6,7 @@ Estudio de producción asistido por IA para YouTube Shorts. Convierte **videos c
 
 ## Qué hace
 
-1. **Subida** de videos MP4, MOV y MKV con la declaración de derechos obligatoria.
+1. **Subida** de videos MP4, MOV y MKV con la declaración de derechos obligatoria. El video se sube en trozos de hasta 4 MB, porque el túnel de puertos de Codespaces rechaza peticiones grandes con HTTP 413. Si un trozo falla, se reintenta.
 2. **Análisis con FFmpeg**: duración, resolución, fps, códecs y pistas de audio.
 3. **Transcripción** local con **Faster-Whisper** (español e inglés, marcas de tiempo por palabra, CPU int8).
 4. **Detección de momentos** combinando transcripción (reacciones, preguntas, exclamaciones), contexto (frases completas), energía del audio (risas o gritos) y cambios de escena.

@@ -81,3 +81,21 @@ def test_rejects_bad_extension(client, tmp_path):
     bad = tmp_path / "x.avi"
     bad.write_bytes(b"0" * 100)
     assert _upload(client, bad).status_code == 400
+
+
+def test_chunked_upload(client, sample_video):
+    """La interfaz sube por partes (el túnel de Codespaces responde 413 a cuerpos grandes)."""
+    data = sample_video.read_bytes()
+    r = client.post("/api/uploads", json={"filename": "sample.mp4", "size": len(data)})
+    assert r.status_code == 201
+    uid = r.json()["upload_id"]
+    step, off = 1024 * 1024, 0
+    while off < len(data):
+        r = client.put(f"/api/uploads/{uid}?offset={off}", content=data[off:off + step])
+        assert r.status_code == 200
+        off = r.json()["received"]
+    form = {k: str(v).lower() if isinstance(v, bool) else v for k, v in APPROVED_RIGHTS.items()}
+    r = client.post("/api/projects", data={**form, "upload_id": uid})
+    assert r.status_code == 201, r.text
+    assert abs(r.json()["media"]["duration"] - 60) < 0.5
+    assert client.post("/api/uploads", json={"filename": "x.avi", "size": 10}).status_code == 400
