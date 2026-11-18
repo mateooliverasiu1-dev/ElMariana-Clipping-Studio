@@ -150,6 +150,15 @@ check("SEO: 3 títulos, descripción, hashtags", len(c["seo"]["titles"])>=2 and 
 s,body,hh = req("GET",f"/api/projects/{pid}/media", headers={"Range":"bytes=0-1023"}, raw=True)
 check("vista previa con Range 206", s==206 and len(body)==1024 and hh.get("content-range","").startswith("bytes 0-1023/"), (s,hh))
 s,body,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/thumbnail", raw=True); check("miniatura", s==200 and body[:2]==b"\xff\xd8")
+check("portada generada al analizar", all(x.get("cover") for x in clips), [x.get("cover") for x in clips][:2])
+s,body,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/cover", raw=True)
+open(str(WORK/"cover.jpg"),"wb").write(body if isinstance(body,bytes) else b"")
+from app.services.media import probe as _probe
+check("portada 1080x1920 JPG < 2 MB", s==200 and body[:2]==b"\xff\xd8" and len(body)<2*1024*1024
+      and (_probe(str(WORK/"cover.jpg"))["width"], _probe(str(WORK/"cover.jpg"))["height"])==(1080,1920))
+s,cc2,_=req("POST",f"/api/projects/{pid}/clips/{c['id']}/cover", json.dumps({"text":"Texto de prueba","at":c["start"]+3}).encode(), {"Content-Type":"application/json"})
+check("regenerar portada con texto y fotograma", s==200 and cc2["cover"]["text"]=="Texto de prueba" and abs(cc2["cover"]["at"]-(c["start"]+3))<0.05, (s,cc2.get("cover") if isinstance(cc2,dict) else cc2))
+s,_,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/cover?download=true", raw=True); check("descargar portada (derechos APPROVED)", s==200)
 s,cd,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}"); words=cd["subtitle_words"]; check("palabras del clip", len(words)>10)
 words[0]["w"]="EDITADO"; words[1]["hl"]=True; words[2]["w"]=""
 s,cu,_=req("PUT",f"/api/projects/{pid}/clips/{c['id']}", json.dumps({"words":words,"title":"Mi título"}).encode(), {"Content-Type":"application/json"})
@@ -183,6 +192,7 @@ check("ASS: palabra editada y resaltados", "EDITADO" in ass and "\\c&H007AF03C&"
 s,pp,_=req("PUT",f"/api/projects/{pid}/rights", json.dumps({**{k:v for k,v in ok_rights.items() if k not in ("name","language","whisper_model")},"confirmed":True,"third_party_music":"unknown"}).encode(), {"Content-Type":"application/json"})
 check("derechos -> REVIEW REQUIRED", s==200 and pp["rights_review"]["status"]=="REVIEW REQUIRED", pp.get("rights_review") if s==200 else pp)
 s,b,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/download"); check("descarga bloqueada por derechos -> 403", s==403, (s,b))
+s,b,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/cover?download=true"); check("portada bloqueada por derechos -> 403", s==403, (s,b))
 s,b,_=req("PUT",f"/api/projects/{pid}/clips/{c['id']}", json.dumps({"end": c["end"]-1}).encode(), {"Content-Type":"application/json"})
 check("editar tras exportar marca 'edited'", s==200 and b["status"]=="edited", b)
 s,lst,_=req("GET","/api/projects"); check("lista de proyectos", s==200 and lst[0]["id"]==pid)

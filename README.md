@@ -17,7 +17,8 @@ Estudio de producción asistido por IA para YouTube Shorts. Convierte **videos c
 9. **Cortes y zooms**: se recortan las pausas largas y se añaden zooms suaves en las reacciones (máximo uno cada 4 s).
 10. **Exportación MP4**: H.264 High, CRF 20, 30 fps, AAC 192k estéreo y audio normalizado a -14 LUFS en dos pasadas.
 11. **Títulos, descripción y hashtags** generados con reglas locales a partir de frases reales del clip (sin APIs de pago).
-12. **Control de calidad y derechos** antes de habilitar la descarga: la descarga solo se activa con QC **PASS** y derechos **APPROVED**.
+12. **Portadas 1080×1920** para cada clip, en JPG de menos de 2 MB. Se elige el fotograma más nítido de una reacción o de un pico de audio (con cara si la hay) y se pone encima la frase del clip con una palabra resaltada. El texto y el fotograma se pueden cambiar.
+13. **Control de calidad y derechos** antes de habilitar la descarga: la descarga solo se activa con QC **PASS** y derechos **APPROVED**.
 
 ## Ejecutar en GitHub Codespaces
 
@@ -79,6 +80,7 @@ app/
     subtitles.py   subtítulos ASS palabra por palabra
     render.py      cortes, zooms, subtítulos y exportación (skill shorts-video-editor)
     seo.py         títulos, descripción y hashtags    (skill youtube-seo)
+    cover.py       portadas verticales 1080x1920
     rights.py      revisión de derechos               (skill copyright-guard)
     quality.py     control de calidad del MP4 final   (skill youtube-quality-control)
 static/            interfaz web (HTML/CSS/JS sin dependencias)

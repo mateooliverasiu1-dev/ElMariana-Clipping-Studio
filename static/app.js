@@ -203,6 +203,8 @@ function renderProject() {
       ),
     ),
     h("div", { class: "actions", style: "margin:0" },
+      p.status === "ready" && p.clips.some((c) => !c.cover)
+        ? h("button", { class: "btn primary", onclick: generateAllCovers }, "Generar portadas") : null,
       h("button", { class: "btn", onclick: openRights }, "Derechos"),
       h("button", { class: "btn", onclick: reprocess, disabled: p.processing || null }, "Re-analizar"),
       h("button", { class: "btn danger", onclick: deleteProject, disabled: p.processing || null }, "Eliminar"),
@@ -288,6 +290,7 @@ function renderClipDetail() {
     previewSection(c),
     timingSection(c),
     exportSection(c),
+    coverSection(c),
     subtitleSection(),
     h("div", { class: "cols2" }, seoSection(c), analysisSection(c)),
   );
@@ -430,6 +433,82 @@ function qcReport(qc, r) {
       `Zooms: ${r.zooms.map((z) => `${z.start}s`).join(", ") || "ninguno"} · Pausas recortadas: ${r.removed_seconds}s · `
       + `Exportación: ${r.export_settings.resolution}, ${r.export_settings.video}, ${r.export_settings.audio}`),
   );
+}
+
+/* ------------------------------------------------------------ portada */
+function coverSection(c) {
+  const pid = S.project.id;
+  const cv = c.cover;
+  const rv = S.project.rights_review;
+  const textIn = h("input", { value: cv ? cv.text : c.title, maxlength: "120" });
+  const manual = cv && cv.reason === "elegido a mano";
+  const atIn = h("input", { type: "number", step: "0.1", min: "0", value: manual ? cv.at : "",
+    placeholder: cv ? `Automático (actual: ${cv.at})` : "Automático" });
+  const layout = h("select", {},
+    ...[["auto", "Automático"], ["crop", "Recorte al hablante"], ["fit", "Completo + fondo desenfocado"]]
+      .map(([v, l]) => h("option", { value: v, selected: (cv && cv.layout === v) || null }, l)));
+  const btn = h("button", { class: "btn primary sm" }, cv ? "Regenerar portada" : "Crear portada");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Creando…";
+    const body = { text: textIn.value, layout: layout.value };
+    if (atIn.value !== "") body.at = parseFloat(atIn.value);
+    try {
+      await api(`/api/projects/${pid}/clips/${c.id}/cover`, { method: "POST", body: JSON.stringify(body) });
+      S.project = await api(`/api/projects/${pid}`);
+      toast("Portada lista");
+      renderClipDetail();
+    } catch (e) {
+      toast(e.message, true);
+      btn.disabled = false;
+      btn.textContent = "Reintentar";
+    }
+  });
+  const cur = () => { const v = $("#player"); return v && S.player === "original" ? v.currentTime.toFixed(2) : null; };
+  return h("div", { class: "card" },
+    h("h3", {}, "Portada 1080×1920"),
+    h("div", { class: "cover-grid" },
+      cv ? h("img", { class: "cover-img", src: `/api/projects/${pid}/clips/${c.id}/cover?v=${cv.updated_at || cv.size_bytes}`, alt: "Portada del clip" })
+        : h("div", { class: "cover-img empty" }, "Sin portada"),
+      h("div", {},
+        cv ? h("p", { class: "muted small", style: "margin:0 0 10px" },
+          `Fotograma en ${fmt(cv.at)} (${cv.reason}) · ${cv.width}×${cv.height} · ${(cv.size_bytes / 1024).toFixed(0)} KB`) : null,
+        h("label", {}, "Texto de la portada", textIn),
+        h("div", { class: "grid2", style: "margin-top:10px" },
+          h("label", {}, "Fotograma (segundo del video)", atIn),
+          h("label", {}, "Encuadre", layout)),
+        h("div", { class: "actions" },
+          h("button", { class: "btn sm", type: "button", onclick: () => { const t = cur(); if (t) atIn.value = t; } },
+            "Usar posición del reproductor"),
+          h("button", { class: "btn sm", type: "button", onclick: () => { atIn.value = ""; } }, "Fotograma automático"),
+        ),
+        h("div", { class: "actions" },
+          btn,
+          cv && rv.status === "APPROVED"
+            ? h("a", { class: "btn sm", href: `/api/projects/${pid}/clips/${c.id}/cover?download=true` }, "⬇ Descargar portada") : null,
+          cv && rv.status !== "APPROVED" ? h("span", { class: "muted small" }, "La descarga requiere derechos APPROVED.") : null,
+        ),
+        h("p", { class: "muted small" }, "En YouTube Studio (computadora) súbela en Detalles → Miniatura. "
+          + "La subida de portadas en Shorts se está habilitando por etapas; si tu canal aún no la tiene, "
+          + "elige en YouTube el fotograma del mismo segundo."),
+      ),
+    ),
+  );
+}
+
+async function generateAllCovers(ev) {
+  const b = ev.currentTarget;
+  b.disabled = true;
+  b.textContent = "Creando portadas…";
+  try {
+    const r = await api(`/api/projects/${S.project.id}/covers`, { method: "POST" });
+    toast(`${r.created} portadas creadas`);
+    await openProject(S.project.id, true);
+  } catch (e) {
+    toast(e.message, true);
+    b.disabled = false;
+    b.textContent = "Generar portadas";
+  }
 }
 
 /* ------------------------------------------------------------ editor de subtítulos */

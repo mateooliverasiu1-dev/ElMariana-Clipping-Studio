@@ -149,3 +149,31 @@ def test_framing_survives_broken_opencv(sample_video, monkeypatch):
     assert res["face_found"] is False and res["center_x"] == 0.5
     assert res["detector"].startswith("no disponible")
     assert framing.opencv_status() == "instalación incompleta"
+
+
+# ---------------------------------------------------------------- portadas
+def test_cover_text_helpers():
+    from app.services import cover
+    assert cover.default_cover_text("ElMariana: “Espera, espera, ¿qué fue eso?”") == "Espera, espera, ¿qué fue eso?"
+    assert cover.clean_text("Hola 😂🔥 chat") == "Hola chat"
+    lines = cover.wrap_lines("UNA FRASE MUY LARGA QUE NO CABE EN UNA SOLA LÍNEA DE LA PORTADA PARA NADA")
+    assert len(lines) <= cover.MAX_LINES and lines[-1].endswith("…")
+    ass = cover.build_cover_ass("¡No manches, jajaja!")
+    assert "JAJAJA" in ass and cover.YELLOW in ass
+
+
+def test_generate_cover_1080x1920(sample_video, tmp_path):
+    from app.services import cover
+    info = media.probe(sample_video)
+    energy = signals.audio_energy(media.extract_audio(sample_video, tmp_path / "a.wav"))
+    words = [w for s in fake_transcript(60)["segments"] for w in s["words"]]
+    clip = {"id": "c1", "start": 18.0, "end": 42.0, "title": "“¡No manches, jajaja, qué susto!” 😂"}
+    res = cover.generate_cover(sample_video, info, clip, words, energy, tmp_path)
+    out = tmp_path / res["file"]
+    probe = media.probe(out)
+    assert (probe["width"], probe["height"]) == (1080, 1920)
+    assert res["size_bytes"] < 2 * 1024 * 1024
+    assert 18.5 <= res["at"] <= 41.5
+    assert res["text"] == "¡No manches, jajaja, qué susto!"
+    manual = cover.generate_cover(sample_video, info, clip, words, energy, tmp_path, text="Otro texto", at=5)
+    assert manual["at"] == 5 and manual["reason"] == "elegido a mano"

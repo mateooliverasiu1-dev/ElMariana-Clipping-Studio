@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import storage
-from .services import highlights, media, quality, render, rights, seo, signals, transcribe
+from .services import cover, highlights, media, quality, render, rights, seo, signals, transcribe
 
 log = logging.getLogger("elmariana.pipeline")
 
@@ -93,8 +93,15 @@ def process_project(pid: str, transcript_override: dict[str, Any] | None = None)
             thumb = f"{cid}.jpg"
         except media.MediaError:
             thumb = None
-        clips.append({**c, "id": cid, "title": meta["titles"][0], "seo": meta, "thumbnail": thumb,
-                      "words": None, "render": None, "qc": None, "status": "candidate"})
+        clip = {**c, "id": cid, "title": meta["titles"][0], "seo": meta, "thumbnail": thumb,
+                "words": None, "render": None, "qc": None, "status": "candidate", "cover": None}
+        storage.set_progress(pid, "covers", 90 + 9 * i / max(len(cands), 1), f"Creando portada {i + 1}/{len(cands)}…")
+        try:
+            words = render.clip_words(transcribe.all_words(tr), c["start"], c["end"])
+            clip["cover"] = cover.generate_cover(src, info, clip, words, energy, pdir / "clips")
+        except Exception as exc:  # la portada nunca bloquea el análisis
+            log.warning("Portada de %s falló: %s", cid, exc)
+        clips.append(clip)
 
     def _save(p: dict[str, Any]) -> None:
         p["clips"] = clips
@@ -149,6 +156,36 @@ def render_and_check(pid: str, cid: str, options: dict[str, Any]) -> None:
     qc = quality.check(pdir / "clips" / report["output"], clip, report, rv["status"], edited_words, ass)
     _mark("exported" if qc["status"] == "PASS" else "qc_failed",
           {"render": report, "qc": qc, "render_progress": 100, "rendered_at": time.time()})
+
+
+def make_cover(pid: str, cid: str, text: str | None = None, at: float | None = None,
+               layout: str = "auto") -> dict[str, Any]:
+    """Genera (o regenera) la portada 1080x1920 de un clip y la guarda en el proyecto."""
+    project = storage.load_project(pid)
+    clip = storage.find_clip(project, cid)
+    words = clip_source_words(pid, clip)
+    energy = load_signals(pid).get("energy")
+    result = cover.generate_cover(source_path(project), project["media"], clip, words, energy,
+                                  storage.project_dir(pid) / "clips", text=text, at=at, layout=layout)
+    result["updated_at"] = time.time()
+
+    def fn(p: dict[str, Any]) -> None:
+        storage.find_clip(p, cid)["cover"] = result
+    storage.update_project(pid, fn)
+    return result
+
+
+def make_missing_covers(pid: str, regenerate: bool = False) -> int:
+    project = storage.load_project(pid)
+    n = 0
+    for c in project.get("clips", []):
+        if regenerate or not c.get("cover"):
+            try:
+                make_cover(pid, c["id"])
+                n += 1
+            except Exception as exc:
+                log.warning("Portada de %s falló: %s", c["id"], exc)
+    return n
 
 
 def mark_clip_error(pid: str, cid: str, exc: Exception) -> None:

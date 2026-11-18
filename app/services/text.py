@@ -15,7 +15,7 @@ donde dos el ella ellas ello ellos en entre era eran es esa esas ese eso esos es
 estamos estan están estar este esto estos estoy fue fueron ha hace hacia han has hasta hay he la
 las le les lo los me mi mis mucho muy más nada ni no nos nosotros o otra otro para pero poco por
 porque pues que qué quien se sea ser si sí sin sobre solo son su sus también tan tanto te tengo
-tiene tienen todo todos tu tus un una uno unos y ya yo eh este bueno o sea entonces como que pues
+tiene tienen todo todos tu tus un una uno unos unas y ya yo eh este bueno o sea entonces como que pues
 the a an and are as at be been but by can could did do does for from had has have he her his i if
 in into is it its just like me my no not of on or our out so that the their them then there they
 this to too up us was we were what when where which who will with would you your yeah okay ok um uh

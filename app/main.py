@@ -518,6 +518,58 @@ def clip_download(pid: str, cid: str, request: Request, kind: str = "mp4") -> Re
     return _media_response(clips_dir / clip["render"]["output"], request, download_name=f"{base}.mp4")
 
 
+class CoverRequest(BaseModel):
+    text: Optional[str] = Field(None, max_length=120)
+    at: Optional[float] = Field(None, ge=0)
+    layout: str = "auto"
+
+
+@app.post("/api/projects/{pid}/covers")
+def generate_covers(pid: str, regenerate: bool = False) -> dict[str, Any]:
+    """Crea las portadas que falten (o todas con ?regenerate=true)."""
+    project = _project_or_404(pid)
+    if project.get("status") != "ready":
+        raise HTTPException(409, "El proyecto aún no termina de procesarse.")
+    if not rights.evaluate(project.get("rights", {}))["can_process"]:
+        raise HTTPException(403, "Derechos BLOCKED.")
+    created = pipeline.make_missing_covers(pid, regenerate=str(regenerate).lower() in ("1", "true"))
+    return {"created": created, "project": _public(storage.load_project(pid))}
+
+
+@app.post("/api/projects/{pid}/clips/{cid}/cover")
+def regenerate_cover(pid: str, cid: str, body: CoverRequest) -> dict[str, Any]:
+    project = _project_or_404(pid)
+    _clip_or_404(project, cid)
+    if body.layout not in ("auto", "crop", "fit"):
+        raise HTTPException(400, "Encuadre no válido")
+    if body.at is not None and body.at > project["media"]["duration"]:
+        raise HTTPException(400, "El tiempo está fuera del video.")
+    if not rights.evaluate(project.get("rights", {}))["can_process"]:
+        raise HTTPException(403, "Derechos BLOCKED.")
+    try:
+        pipeline.make_cover(pid, cid, text=body.text, at=body.at, layout=body.layout)
+    except media.MediaError as exc:
+        raise HTTPException(500, f"No se pudo crear la portada: {exc}")
+    return storage.find_clip(storage.load_project(pid), cid)
+
+
+@app.get("/api/projects/{pid}/clips/{cid}/cover")
+def clip_cover(pid: str, cid: str, download: bool = False) -> Response:
+    """Vista previa de la portada; con ?download=true exige derechos APPROVED."""
+    project = _project_or_404(pid)
+    clip = _clip_or_404(project, cid)
+    if not clip.get("cover"):
+        raise HTTPException(404, "Este clip aún no tiene portada")
+    path = storage.project_dir(pid) / "clips" / clip["cover"]["file"]
+    if str(download).lower() in ("1", "true"):
+        status = rights.evaluate(project.get("rights", {}))["status"]
+        if status != "APPROVED":
+            raise HTTPException(403, f"Descarga bloqueada: derechos en estado {status}.")
+        return FileResponse(path, media_type="image/jpeg",
+                            filename=f"{_safe_name(clip.get('title') or cid)}_portada.jpg")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/projects/{pid}/clips/{cid}/thumbnail")
 def clip_thumbnail(pid: str, cid: str) -> Response:
     project = _project_or_404(pid)
