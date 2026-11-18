@@ -92,6 +92,8 @@ async function loadHealth() {
     chip(S.health.ffmpeg ? "FFmpeg ✓" : "FFmpeg no encontrado", S.health.ffmpeg ? "ok" : "bad"),
     chip(S.health.faster_whisper ? `Whisper ✓ (${S.health.whisper_default_model})` : "Faster-Whisper no instalado",
       S.health.faster_whisper ? "ok" : "bad"),
+    S.health.face_detection === "ok" ? chip("Caras ✓", "ok")
+      : chip(`Detección de caras: ${S.health.face_detection} (encuadre centrado)`, "warn"),
     chip("v" + S.health.version),
   );
   fillRightsFieldsets();

@@ -17,14 +17,26 @@ LAYOUTS = ("auto", "crop", "fit")
 
 
 def detect_subject(src: str | Path, start: float, end: float, samples: int = 8) -> dict[str, Any]:
-    """Devuelve {'face_found', 'center_x' (0–1), 'hits', 'samples'}; nunca lanza excepción."""
-    result = {"face_found": False, "center_x": 0.5, "hits": 0, "samples": 0}
+    """Devuelve {'face_found', 'center_x' (0–1), 'hits', 'samples', 'detector'}; nunca lanza excepción.
+
+    Si OpenCV falta o está incompleto, se usa encuadre centrado y el render continúa.
+    """
+    result: dict[str, Any] = {"face_found": False, "center_x": 0.5, "hits": 0, "samples": 0, "detector": "opencv"}
     try:
-        import cv2
-    except Exception:
-        log.warning("OpenCV no disponible; se usa encuadre centrado")
-        return result
+        return _detect(src, start, end, samples, result)
+    except Exception as exc:  # OpenCV roto, video ilegible, etc.
+        log.warning("Detección de caras no disponible (%s); se usa encuadre centrado", exc)
+        return {"face_found": False, "center_x": 0.5, "hits": 0, "samples": 0,
+                "detector": f"no disponible: {exc}"}
+
+
+def _detect(src: str | Path, start: float, end: float, samples: int, result: dict[str, Any]) -> dict[str, Any]:
+    import cv2
+    if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
+        raise RuntimeError("la instalación de OpenCV está incompleta (reinstala opencv-python-headless)")
     cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+    if not cascade_path.exists():
+        raise RuntimeError("falta el modelo haarcascade de OpenCV")
     cascade = cv2.CascadeClassifier(str(cascade_path))
     if cascade.empty():
         return result
@@ -59,6 +71,19 @@ def detect_subject(src: str | Path, start: float, end: float, samples: int = 8) 
         centers.sort()
         result["center_x"] = round(centers[len(centers) // 2], 3)
     return result
+
+
+def opencv_status() -> str:
+    """'ok' o el motivo por el que la detección de caras no está disponible."""
+    try:
+        import cv2
+        if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
+            return "instalación incompleta"
+        if not (Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml").exists():
+            return "falta el modelo de caras"
+        return "ok"
+    except Exception as exc:
+        return f"no disponible ({exc.__class__.__name__})"
 
 
 def resolve_layout(requested: str, info: dict[str, Any], subject: dict[str, Any]) -> str:

@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, config, jobs, pipeline, storage
-from .services import media, rights, transcribe
+from .services import framing, media, rights, transcribe
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("elmariana.api")
@@ -103,6 +103,7 @@ def health() -> dict[str, Any]:
         "version": __version__,
         "ffmpeg": media.ffmpeg_available(),
         "faster_whisper": transcribe.whisper_available(),
+        "face_detection": framing.opencv_status(),
         "whisper_default_model": config.WHISPER_DEFAULT_MODEL,
         "whisper_models": list(config.WHISPER_MODELS),
         "languages": list(config.LANGUAGES),

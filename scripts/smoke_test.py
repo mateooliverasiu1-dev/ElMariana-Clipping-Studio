@@ -150,6 +150,9 @@ for pr in qc.get("problems",[]): print("   QC", pr["level"], pr["area"], pr["mes
 check("exportado con QC PASS", cc["status"]=="exported" and qc.get("status")=="PASS")
 s,body,hh=req("GET",f"/api/projects/{pid}/clips/{c['id']}/download", raw=True)
 check("descarga MP4", s==200 and "attachment" in hh.get("content-disposition",""), (s,hh))
+if s != 200:
+    print("\nNo se pudo exportar el clip; se detiene la prueba.", cc.get("error") or "")
+    srv.should_exit = True; shutil.rmtree(WORK, ignore_errors=True); sys.exit(1)
 open(str(WORK/"dl.mp4"),"wb").write(body)
 from app.services.media import probe
 pi=probe(str(WORK/"dl.mp4")); check("MP4 final 1080x1920 h264/aac", pi["width"]==1080 and pi["height"]==1920 and pi["video_codec"]=="h264" and pi["audio_codec"]=="aac", pi)

@@ -136,3 +136,16 @@ def test_seo_avoids_repeated_titles():
     a = seo.generate(clip, used_quotes=used)["titles"][0]
     b = seo.generate(clip, used_quotes=used)["titles"][0]
     assert a != b
+
+
+def test_framing_survives_broken_opencv(sample_video, monkeypatch):
+    """Regresión: en Codespaces apareció un cv2 sin CascadeClassifier y el render fallaba."""
+    import sys
+    import types
+
+    from app.services import framing
+    monkeypatch.setitem(sys.modules, "cv2", types.ModuleType("cv2"))
+    res = framing.detect_subject(sample_video, 0, 10)
+    assert res["face_found"] is False and res["center_x"] == 0.5
+    assert res["detector"].startswith("no disponible")
+    assert framing.opencv_status() == "instalación incompleta"
