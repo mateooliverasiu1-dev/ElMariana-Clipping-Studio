@@ -4,5 +4,5 @@ uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 pydantic>=2.6
 numpy>=1.26
-opencv-python-headless>=4.9   # detección de caras para el encuadre 9:16
+opencv-python-headless>=4.9,<5   # detección de caras (Haar); OpenCV 5 quitó CascadeClassifier
 faster-whisper>=1.0.3         # transcripción local (modelos tiny/base/small, int8)

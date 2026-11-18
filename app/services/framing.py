@@ -33,7 +33,7 @@ def detect_subject(src: str | Path, start: float, end: float, samples: int = 8) 
 def _detect(src: str | Path, start: float, end: float, samples: int, result: dict[str, Any]) -> dict[str, Any]:
     import cv2
     if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
-        raise RuntimeError("la instalación de OpenCV está incompleta (reinstala opencv-python-headless)")
+        raise RuntimeError("la instalación de OpenCV está incompleta (instala opencv-python-headless<5: OpenCV 5 quitó CascadeClassifier)")
     cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
     if not cascade_path.exists():
         raise RuntimeError("falta el modelo haarcascade de OpenCV")
