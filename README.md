@@ -6,7 +6,7 @@ Estudio de producción asistido por IA para YouTube Shorts. Convierte **videos c
 
 ## Qué hace
 
-1. **Subida** de videos MP4, MOV y MKV con la declaración de derechos obligatoria. El video se sube en trozos de hasta 4 MB, porque el túnel de puertos de Codespaces rechaza peticiones grandes con HTTP 413. Si un trozo falla, se reintenta.
+1. **Subida** de videos MP4, MOV y MKV con la declaración de derechos obligatoria. El video se sube en trozos de hasta 4 MB, porque el túnel de puertos de Codespaces rechaza peticiones grandes con HTTP 413. Si la conexión se corta, la subida se reanuda desde donde se quedó. Para videos muy grandes puedes copiarlos a `data/entrada/` en el servidor e importarlos desde el diálogo, sin subirlos por el navegador.
 2. **Análisis con FFmpeg**: duración, resolución, fps, códecs y pistas de audio.
 3. **Transcripción** local con **Faster-Whisper** (español e inglés, marcas de tiempo por palabra, CPU int8).
 4. **Detección de momentos** combinando transcripción (reacciones, preguntas, exclamaciones), contexto (frases completas), energía del audio (risas o gritos) y cambios de escena.
@@ -50,6 +50,14 @@ python scripts/smoke_test.py --fake-whisper  # prueba de extremo a extremo por H
 python scripts/smoke_test.py                 # igual, pero con Faster-Whisper real
 RUN_WHISPER_TEST=1 pytest tests/test_transcribe.py   # descarga el modelo tiny y transcribe voz sintética
 ```
+
+## Videos grandes en Codespaces
+
+El túnel de puertos de Codespaces no es ideal para archivos de varios GB. Además, si el Codespace se suspende por inactividad, la subida se corta (el túnel responde 404).
+
+- **Opción A:** en el Explorador de VS Code, arrastra el video a la carpeta `data/entrada/`. Luego, en la app: **Nuevo proyecto → ¿Video muy grande? → elegir el video**.
+- **Opción B:** sube por el navegador como siempre. Si se corta, vuelve a tocar **Subir y analizar** y continuará donde se quedó.
+- Sube el tiempo de suspensión en GitHub → Settings → Codespaces → *Default idle timeout*.
 
 ## Configuración (variables de entorno)
 

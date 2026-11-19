@@ -10,6 +10,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("ELMARIANA_DATA_DIR", BASE_DIR / "data")).resolve()
 PROJECTS_DIR = DATA_DIR / "projects"
+# Carpeta para importar videos copiados directamente al servidor (sin subirlos por el navegador).
+INBOX_DIR = DATA_DIR / "entrada"
 STATIC_DIR = BASE_DIR / "static"
 
 # Formatos de entrada aceptados.
@@ -45,3 +47,4 @@ FFPROBE = os.environ.get("FFPROBE_BIN", "ffprobe")
 
 def ensure_dirs() -> None:
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)

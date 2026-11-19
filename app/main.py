@@ -212,6 +212,35 @@ async def upload_chunk(uid: str, request: Request, offset: int = 0) -> dict[str,
     return {"received": info["received"], "size": info["size"]}
 
 
+@app.get("/api/uploads/{uid}")
+def upload_status(uid: str) -> dict[str, Any]:
+    """Cuánto se ha recibido: permite reanudar una subida cortada."""
+    _, meta = _upload_paths(uid)
+    if not meta.exists():
+        raise HTTPException(404, "Subida no encontrada")
+    info = json.loads(meta.read_text(encoding="utf-8"))
+    return {"received": info["received"], "size": info["size"], "filename": info["filename"]}
+
+
+# ---------------------------------------------------------------- carpeta de entrada
+def _inbox_file(name: str) -> Path:
+    p = config.INBOX_DIR / name
+    if Path(name).name != name or name.startswith(".") or not p.is_file():
+        raise HTTPException(404, "Ese archivo no está en la carpeta de entrada")
+    return p
+
+
+@app.get("/api/inbox")
+def inbox_list() -> dict[str, Any]:
+    """Videos copiados a data/entrada (útil para archivos grandes)."""
+    config.ensure_dirs()
+    files = []
+    for f in sorted(config.INBOX_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+        if f.is_file() and f.suffix.lower() in config.ALLOWED_EXTENSIONS and not f.name.startswith("."):
+            files.append({"name": f.name, "size": f.stat().st_size})
+    return {"folder": str(config.INBOX_DIR), "files": files}
+
+
 @app.delete("/api/uploads/{uid}", status_code=204)
 def upload_cancel(uid: str) -> Response:
     for f in _upload_paths(uid):
@@ -225,11 +254,19 @@ def rights_evaluate(body: RightsUpdate) -> dict[str, Any]:
     return rights.evaluate(body.model_dump())
 
 
+def _discard_new_project(pdir: Path, dst: Path, inbox_file: str) -> None:
+    """Deshace un proyecto fallido; un video de la carpeta de entrada vuelve a su sitio."""
+    if inbox_file and dst.exists():
+        shutil.move(str(dst), str(config.INBOX_DIR / Path(inbox_file).name))
+    shutil.rmtree(pdir, ignore_errors=True)
+
+
 # ---------------------------------------------------------------- creación de proyectos
 @app.post("/api/projects", status_code=201)
 async def create_project(
     file: Optional[UploadFile] = File(None),
     upload_id: str = Form(""),
+    inbox_file: str = Form(""),
     name: str = Form(""),
     language: str = Form("auto"),
     whisper_model: str = Form(config.WHISPER_DEFAULT_MODEL),
@@ -244,7 +281,8 @@ async def create_project(
     confirmed: str = Form("false"),
     notes: str = Form(""),
 ) -> dict[str, Any]:
-    """Crea un proyecto con un archivo directo (`file`) o con una subida por partes (`upload_id`)."""
+    """Crea un proyecto desde un archivo directo (`file`), una subida por partes (`upload_id`)
+    o un video de la carpeta de entrada (`inbox_file`)."""
     if upload_id:
         part, meta = _upload_paths(upload_id)
         if not meta.exists():
@@ -253,6 +291,8 @@ async def create_project(
         if up["received"] != up["size"]:
             raise HTTPException(400, "La subida está incompleta")
         filename = up["filename"]
+    elif inbox_file:
+        filename = _inbox_file(inbox_file).name
     elif file is not None and file.filename:
         filename = file.filename
     else:
@@ -289,6 +329,9 @@ async def create_project(
             part, meta = _upload_paths(upload_id)
             shutil.move(str(part), dst)
             meta.unlink(missing_ok=True)
+        elif inbox_file:
+            # Se mueve (no se copia) para no duplicar gigas en disco.
+            shutil.move(str(_inbox_file(inbox_file)), dst)
         else:
             written = 0
             with dst.open("wb") as fh:
@@ -302,10 +345,10 @@ async def create_project(
         if errors:
             raise HTTPException(400, " ".join(errors))
     except HTTPException:
-        shutil.rmtree(pdir, ignore_errors=True)
+        _discard_new_project(pdir, dst, inbox_file)
         raise
     except media.MediaError as exc:
-        shutil.rmtree(pdir, ignore_errors=True)
+        _discard_new_project(pdir, dst, inbox_file)
         raise HTTPException(400, f"No se pudo analizar el video: {exc}")
 
     project = storage.create_project({

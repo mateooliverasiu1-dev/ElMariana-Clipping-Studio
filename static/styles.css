@@ -152,6 +152,11 @@ label.check input { width: auto; margin: 0; }
 .cover-img { width: 200px; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: #0e1118; }
 .cover-img.empty { display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 
+.inbox-box { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; }
+.inbox-box summary { cursor: pointer; color: var(--muted); }
+.inbox-box select { margin-top: 0; }
+code { background: #0e1118; padding: 1px 5px; border-radius: 5px; }
+
 /* diálogos */
 .dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text); padding: 0; width: min(760px, 94vw); }
 .dialog::backdrop { background: rgba(0, 0, 0, .65); }

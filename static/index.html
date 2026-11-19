@@ -34,10 +34,19 @@
       </header>
       <div class="dialog-body">
         <label class="dropzone" id="dropzone">
-          <input type="file" name="file" id="fileInput" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" required hidden>
+          <input type="file" name="file" id="fileInput" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" hidden>
           <span class="dz-icon">⬆</span>
           <span id="dzText">Arrastra un video MP4, MOV o MKV o haz clic para elegirlo</span>
         </label>
+        <details class="inbox-box">
+          <summary>¿Video muy grande? Úsalo desde la carpeta de entrada</summary>
+          <p class="muted small">Copia el video a <code id="inboxFolder">data/entrada</code> en el servidor
+            (en Codespaces: arrástralo a esa carpeta en el Explorador) y elígelo aquí. No pasa por la subida del navegador.</p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="inboxSelect"><option value="">— Elegir video de la carpeta —</option></select>
+            <button type="button" class="btn sm" id="inboxRefresh">Actualizar</button>
+          </div>
+        </details>
         <div class="grid2">
           <label>Nombre del proyecto<input name="name" placeholder="Opcional"></label>
           <label>Idioma

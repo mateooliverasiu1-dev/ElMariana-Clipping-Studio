@@ -754,6 +754,7 @@ function openUpload(file) {
   $("#uploadError").classList.add("hidden");
   $("#uploadProgress").classList.add("hidden");
   $("#uploadSubmit").disabled = false;
+  loadInbox();
   $("#uploadDialog").showModal();
 }
 
@@ -780,52 +781,115 @@ function setUploadProgress(pct, label) {
   prog.querySelector("span").textContent = label;
 }
 
-/* Sube el archivo en trozos: el túnel de puertos de Codespaces rechaza peticiones grandes (413). */
+/* Sube el archivo en trozos: el túnel de puertos de Codespaces rechaza peticiones grandes (413).
+   La subida se puede reanudar: si se corta, al volver a intentarlo continúa donde se quedó. */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isJson = (res) => (res.headers.get("content-type") || "").includes("application/json");
+const resumeKey = (file) => `elmariana-upload:${file.name}:${file.size}:${file.lastModified}`;
+
+function storeGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* sin almacenamiento */ } }
+function storeDel(k) { try { localStorage.removeItem(k); } catch (_) { /* sin almacenamiento */ } }
+
+async function uploadStatus(uid) {
+  // null = la subida ya no existe en el servidor; undefined = no se pudo consultar (túnel caído)
+  try {
+    const res = await fetch(`/api/uploads/${uid}`);
+    if (res.ok) return await res.json();
+    if (res.status === 404 && isJson(res)) return null;
+  } catch (_) { /* red caída */ }
+  return undefined;
+}
+
 async function uploadInChunks(file) {
-  const init = await api("/api/uploads", { method: "POST", body: JSON.stringify({ filename: file.name, size: file.size }) });
-  const uid = init.upload_id;
-  let chunk = Math.min(4 * 1024 * 1024, init.max_chunk_bytes);
+  const key = resumeKey(file);
+  let uid = storeGet(key);
   let offset = 0;
+  if (uid) {
+    const st = await uploadStatus(uid);
+    if (st && st.size === file.size) offset = st.received; // se reanuda
+    else uid = null;
+  }
+  if (!uid) {
+    const init = await api("/api/uploads", { method: "POST", body: JSON.stringify({ filename: file.name, size: file.size }) });
+    uid = init.upload_id;
+    storeSet(key, uid);
+  }
+  let chunk = 4 * 1024 * 1024;
   let failures = 0;
+  let lastError = "";
   const t0 = Date.now();
+  const startOffset = offset;
+  if (offset) setUploadProgress(Math.round((offset / file.size) * 100), "Reanudando…");
   while (offset < file.size) {
-    const blob = file.slice(offset, offset + chunk);
-    let res;
+    let res = null;
     try {
       res = await fetch(`/api/uploads/${uid}?offset=${offset}`, {
-        method: "PUT", body: blob, headers: { "Content-Type": "application/octet-stream" },
+        method: "PUT", body: file.slice(offset, offset + chunk), headers: { "Content-Type": "application/octet-stream" },
       });
-    } catch (_) {
-      res = null; // error de red: se reintenta
-    }
+    } catch (_) { /* error de red */ }
+
     if (res && res.status === 413 && chunk > 256 * 1024) {
-      chunk = Math.floor(chunk / 2); // el túnel aún lo considera grande: trozos más pequeños
+      chunk = Math.floor(chunk / 2); // el túnel aún lo considera grande
       continue;
     }
-    if (!res || !res.ok) {
-      if (++failures > 5) {
-        const d = res ? (await res.json().catch(() => ({}))).detail : null;
-        throw new Error(typeof d === "string" ? d : `La subida se interrumpió${res ? ` (error ${res.status})` : ""}. Intenta de nuevo.`);
-      }
-      await new Promise((r) => setTimeout(r, 1000 * failures));
+    if (res && res.ok) {
+      failures = 0;
+      offset = (await res.json()).received;
+      const pct = Math.round((offset / file.size) * 100);
+      const mbps = (offset - startOffset) / 1e6 / Math.max((Date.now() - t0) / 1000, 0.1);
+      const left = mbps > 0 ? (file.size - offset) / 1e6 / mbps : 0;
+      setUploadProgress(pct, `${pct}% · ${mbps.toFixed(1)} MB/s · faltan ~${Math.ceil(left / 60)} min`);
       continue;
     }
-    failures = 0;
-    offset = (await res.json()).received;
-    const pct = Math.round((offset / file.size) * 100);
-    const mbps = offset / 1e6 / Math.max((Date.now() - t0) / 1000, 0.1);
-    setUploadProgress(pct, `${pct}% · ${mbps.toFixed(1)} MB/s`);
+
+    // Fallo: error de la app (JSON) o del túnel/red (HTML, 404/502/504, sin respuesta).
+    if (res && isJson(res) && res.status < 500) {
+      const d = (await res.json().catch(() => ({}))).detail;
+      if (res.status === 404) { storeDel(key); throw new Error("El servidor ya no tiene esta subida (¿se reinició o se borró?). Vuelve a intentarlo: empezará de cero."); }
+      throw new Error(typeof d === "string" ? d : `Error ${res.status}`);
+    }
+    lastError = res ? `error ${res.status}` : "sin conexión";
+    failures += 1;
+    if (failures > 12) {
+      const pct = Math.round((offset / file.size) * 100);
+      throw new Error(`Se perdió la conexión con el servidor (${lastError}) al ${pct}%. `
+        + "Si usas Codespaces, revisa que siga encendido y que la app siga corriendo en la terminal. "
+        + "Luego vuelve a tocar «Subir y analizar»: continuará desde ese punto, no desde cero.");
+    }
+    setUploadProgress(Math.round((offset / file.size) * 100), `Conexión inestable (${lastError}), reintentando ${failures}/12…`);
+    await sleep(Math.min(2000 * failures, 15000));
+    const st = await uploadStatus(uid); // resincroniza lo que sí llegó
+    if (st === null) { storeDel(key); throw new Error("El servidor ya no tiene esta subida. Vuelve a intentarlo: empezará de cero."); }
+    if (st) offset = st.received;
   }
-  return uid;
+  return { uid, key };
+}
+
+/* ------------------------------------------------------------ carpeta de entrada */
+async function loadInbox() {
+  const sel = $("#inboxSelect");
+  if (!sel) return;
+  try {
+    const data = await api("/api/inbox");
+    sel.replaceChildren(h("option", { value: "" }, data.files.length ? "— Elegir video de la carpeta —" : "(carpeta vacía)"),
+      ...data.files.map((f) => h("option", { value: f.name }, `${f.name} · ${bytes(f.size)}`)));
+    $("#inboxFolder").textContent = data.folder;
+  } catch (e) {
+    sel.replaceChildren(h("option", { value: "" }, "No se pudo leer la carpeta"));
+  }
 }
 
 $("#uploadForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
   $("#uploadError").classList.add("hidden");
-  if (!pickedFile) return showUploadError("Elige un video.");
-  const ext = pickedFile.name.split(".").pop().toLowerCase();
-  if (!["mp4", "mov", "mkv"].includes(ext)) return showUploadError("Formato no permitido. Usa MP4, MOV o MKV.");
+  const inboxName = $("#inboxSelect") ? $("#inboxSelect").value : "";
+  if (!pickedFile && !inboxName) return showUploadError("Elige un video o uno de la carpeta de entrada.");
+  if (pickedFile && !inboxName) {
+    const ext = pickedFile.name.split(".").pop().toLowerCase();
+    if (!["mp4", "mov", "mkv"].includes(ext)) return showUploadError("Formato no permitido. Usa MP4, MOV o MKV.");
+  }
 
   const fd = new FormData(form);
   fd.delete("file");
@@ -842,13 +906,19 @@ $("#uploadForm").addEventListener("submit", async (e) => {
     if (!review.can_process) {
       throw new Error("Derechos BLOCKED: no se puede subir este video.\n• " + review.required_actions.join("\n• "));
     }
-    // 2) Video por partes.
-    setUploadProgress(0, "0%");
-    const uid = await uploadInChunks(pickedFile);
+    // 2) Video: desde la carpeta de entrada (sin subir) o por partes.
+    let up = null;
+    if (inboxName) {
+      fd.set("inbox_file", inboxName);
+    } else {
+      setUploadProgress(0, "0%");
+      up = await uploadInChunks(pickedFile);
+      fd.set("upload_id", up.uid);
+    }
     // 3) Crear el proyecto.
     setUploadProgress(100, "Analizando…");
-    fd.set("upload_id", uid);
     const project = await api("/api/projects", { method: "POST", body: fd });
+    if (up) storeDel(up.key);
     $("#uploadDialog").close();
     toast("Video subido. Procesando…");
     await loadProjects();
@@ -863,6 +933,7 @@ $("#uploadForm").addEventListener("submit", async (e) => {
 
 document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
 $("#btnNew").addEventListener("click", () => openUpload());
+$("#inboxRefresh").addEventListener("click", loadInbox);
 $("#brand").addEventListener("click", () => { clearTimeout(S.pollTimer); showDashboard(); });
 
 /* ------------------------------------------------------------ inicio */

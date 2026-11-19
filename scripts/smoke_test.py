@@ -125,6 +125,8 @@ with open(src_file,"rb") as fh:
         off = r["received"]
 check("subida por partes: todos los trozos", off==size, (off,size))
 check("subida por partes: reintento sin duplicar", dup_ok)
+s,st,_ = req("GET",f"/api/uploads/{uid}"); check("estado de subida (reanudar)", s==200 and st["received"]==size, (s,st))
+s,_,_ = req("GET","/api/uploads/0123456789abcdef0123456789abcdef"); check("subida inexistente -> 404", s==404)
 fields = {**ok_rights, "upload_id": uid}
 bnd = uuid.uuid4().hex
 body = b"".join(f"--{bnd}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode() for k,v in fields.items()) + f"--{bnd}--\r\n".encode()
@@ -195,6 +197,22 @@ s,b,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/download"); check("descarg
 s,b,_=req("GET",f"/api/projects/{pid}/clips/{c['id']}/cover?download=true"); check("portada bloqueada por derechos -> 403", s==403, (s,b))
 s,b,_=req("PUT",f"/api/projects/{pid}/clips/{c['id']}", json.dumps({"end": c["end"]-1}).encode(), {"Content-Type":"application/json"})
 check("editar tras exportar marca 'edited'", s==200 and b["status"]=="edited", b)
+# Carpeta de entrada: importar sin subir por el navegador
+inbox = WORK/"data"/"entrada"; inbox.mkdir(parents=True, exist_ok=True)
+shutil.copy(str(WORK/"long.mp4"), str(inbox/"grande.mp4")); (inbox/"roto.mp4").write_bytes(b"no es video"*50)
+s,ib,_=req("GET","/api/inbox"); check("listar carpeta de entrada", s==200 and {f["name"] for f in ib["files"]}=={"grande.mp4","roto.mp4"}, ib)
+def _form(fields):
+    bnd = uuid.uuid4().hex
+    return (b"".join(f"--{bnd}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode() for k,v in fields.items())
+            + f"--{bnd}--\r\n".encode(), {"Content-Type": f"multipart/form-data; boundary={bnd}"})
+s,b,_=req("POST","/api/projects", *_form({**ok_rights, "inbox_file":"roto.mp4"}))
+check("video inválido de entrada -> 400 y vuelve a la carpeta", s==400 and (inbox/"roto.mp4").exists(), (s,b))
+s,b,_=req("POST","/api/projects", *_form({**ok_rights, "inbox_file":"../etc/passwd"})); check("ruta maliciosa en entrada -> 404", s==404, (s,b))
+s,pin,_=req("POST","/api/projects", *_form({**ok_rights, "inbox_file":"grande.mp4"}))
+check("importar desde carpeta de entrada -> 201", s==201 and not (inbox/"grande.mp4").exists(), (s,pin))
+if s==201:
+    while req("GET",f"/api/projects/{pin['id']}")[1]["status"] not in ("ready","error"): time.sleep(0.5)
+    req("DELETE",f"/api/projects/{pin['id']}")
 s,lst,_=req("GET","/api/projects"); check("lista de proyectos", s==200 and lst[0]["id"]==pid)
 s,_,_=req("DELETE",f"/api/projects/{pid}"); check("eliminar proyecto 204", s==204)
 s,_,_=req("GET",f"/api/projects/{pid}"); check("proyecto eliminado -> 404", s==404)
