@@ -92,6 +92,7 @@ def build_cover_ass(text: str, font: str = config.SUBTITLE_FONT) -> str:
     size = _font_size(lines)
     # Centro algo por encima de la mitad: visible en el feed y lejos de la interfaz inferior.
     y = int(COVER_H * 0.40)
+    body = "\\N".join(rendered)  # fuera de la f-string: Python 3.11 no admite "\\" dentro de {...}
     return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {COVER_W}
@@ -105,7 +106,7 @@ Style: Cover,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:05.00,Cover,,0,0,0,,{{\\pos({COVER_W // 2},{y})}}{"\\N".join(rendered)}
+Dialogue: 0,0:00:00.00,0:00:05.00,Cover,,0,0,0,,{{\\pos({COVER_W // 2},{y})}}{body}
 """
 
 
