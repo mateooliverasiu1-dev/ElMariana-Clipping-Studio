@@ -6,3 +6,4 @@ pydantic>=2.6
 numpy>=1.26
 opencv-python-headless>=4.9,<5   # detección de caras (Haar); OpenCV 5 quitó CascadeClassifier
 faster-whisper>=1.0.3         # transcripción local (modelos tiny/base/small, int8)
+piper-tts>=1.2                # voz sintética local para videos explicativos (gratis, CPU)

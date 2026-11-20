@@ -59,6 +59,20 @@ El túnel de puertos de Codespaces no es ideal para archivos de varios GB. Adem�
 - **Opción B:** sube por el navegador como siempre. Si se corta, vuelve a tocar **Subir y analizar** y continuará donde se quedó.
 - Sube el tiempo de suspensión en GitHub → Settings → Codespaces → *Default idle timeout*.
 
+## Videos explicativos con voz (Piper)
+
+`explainers/cielo_azul.py` genera un Short explicativo de ejemplo: "¿Por qué el cielo es azul… y el atardecer naranja?". Las animaciones están dibujadas por código, la música es original y la voz se crea con **Piper**, que es gratis y corre en tu equipo.
+
+```bash
+pip install piper-tts                        # una vez (ya viene en requirements.txt)
+python -m app.services.voice "Hola, prueba"  # descarga la voz la primera vez y crea data/voices/prueba.wav
+python explainers/cielo_azul.py              # video con voz -> data/explicativos/cielo_azul/cielo_azul_short.mp4
+python explainers/cielo_azul.py --sin-voz    # solo texto y música
+python explainers/cielo_azul.py --voz es_MX-ald-medium   # otra voz mexicana
+```
+
+La voz por defecto es `es_MX-claude-high`, que se descarga una sola vez desde Hugging Face (rhasspy/piper-voices). Cada escena dura lo que tarde la narración, y la música baja de volumen mientras se habla.
+
 ## Configuración (variables de entorno)
 
 | Variable | Por defecto | Uso |
