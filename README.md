@@ -81,6 +81,15 @@ python -m app.services.voice --comparar "¿Por qué el cielo es azul?"   # un WA
 python explainers/cielo_azul.py --voz kokoro:em_alex                  # -> cielo_azul_kokoro_em_alex.mp4
 ```
 
+### Más videos explicativos
+
+- `explainers/godzilla_24h.py`: "¿Qué pasaría si Godzilla apareciera 24 horas en el mundo real?", con la voz de Alex (Kokoro) por defecto. No dibuja al personaje (tiene derechos de Toho); muestra sus efectos.
+- `explainers/engine.py`: motor común (voz, ajuste de duración por escena, fundidos, música con ducking, exportación). Para un video nuevo solo escribes el guion y las escenas.
+
+```bash
+python explainers/godzilla_24h.py          # -> data/explicativos/godzilla_24h/godzilla_24h_kokoro_em_alex.mp4
+```
+
 ## Configuración (variables de entorno)
 
 | Variable | Por defecto | Uso |
