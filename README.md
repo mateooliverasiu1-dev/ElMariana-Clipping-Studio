@@ -73,6 +73,14 @@ python explainers/cielo_azul.py --voz es_MX-ald-medium   # otra voz mexicana
 
 La voz por defecto es `es_MX-claude-high`, que se descarga una sola vez desde Hugging Face (rhasspy/piper-voices). Cada escena dura lo que tarde la narración, y la música baja de volumen mientras se habla.
 
+**Voz más natural con Kokoro.** Usa el modelo Kokoro-82M (Apache 2.0, se puede usar en canales monetizados) a través de `kokoro-onnx`, sin PyTorch. La primera vez descarga unos 340 MB desde GitHub. Sus voces en español (`em_alex`, `ef_dora`, `em_santa`) son de origen español; la app pide pronunciación latinoamericana (`es-419`) cuando el motor lo permite.
+
+```bash
+pip install kokoro-onnx
+python -m app.services.voice --comparar "¿Por qué el cielo es azul?"   # un WAV por voz en data/voices/
+python explainers/cielo_azul.py --voz kokoro:em_alex                  # -> cielo_azul_kokoro_em_alex.mp4
+```
+
 ## Configuración (variables de entorno)
 
 | Variable | Por defecto | Uso |

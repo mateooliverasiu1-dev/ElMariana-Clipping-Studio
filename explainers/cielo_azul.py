@@ -4,9 +4,10 @@ Uso (desde la raíz del repo):
     python explainers/cielo_azul.py              -> video con voz (Piper) y música
     python explainers/cielo_azul.py --sin-voz    -> solo texto en pantalla + música
     python explainers/cielo_azul.py --voz es_MX-ald-medium
+    python explainers/cielo_azul.py --voz kokoro:em_alex     (Kokoro: em_alex, ef_dora, em_santa)
     python explainers/cielo_azul.py frames       -> fotogramas de muestra en preview/
 
-Resultado: data/explicativos/cielo_azul/cielo_azul_short.mp4
+Resultado: data/explicativos/cielo_azul/cielo_azul_<voz>.mp4
 Todo es original: animaciones dibujadas por código y música sintetizada (sin derechos de terceros).
 """
 import argparse, math, os, random, subprocess, sys, wave
@@ -490,7 +491,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("modo", nargs="?", default="render", choices=["render", "frames"])
     ap.add_argument("--sin-voz", action="store_true", help="sin narración")
-    ap.add_argument("--voz", default=None, help="voz de Piper (por defecto es_MX-claude-high)")
+    ap.add_argument("--voz", default=None, help="es_MX-claude-high (Piper, por defecto) o kokoro:em_alex / kokoro:ef_dora / kokoro:em_santa")
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
 
@@ -506,12 +507,14 @@ def main():
     voice = None
     if not args.sin_voz:
         from app.services import voice as V
-        if not V.piper_available():
-            raise SystemExit("Piper no está instalado. Ejecuta: pip install piper-tts\n"
+        voice_name = args.voz or V.DEFAULT_VOICE
+        if not V.engine_available(voice_name):
+            pkg = "kokoro-onnx" if V.is_kokoro(voice_name) else "piper-tts"
+            raise SystemExit(f"El motor de voz no está instalado. Ejecuta: pip install {pkg}\n"
                              "(o usa --sin-voz para hacer el video solo con texto y música)")
-        work = os.path.join(OUT, "voz")
+        work = os.path.join(OUT, "voz", voice_name.replace(":", "_"))
         os.makedirs(work, exist_ok=True)
-        wavs = prepare_voice(args.voz or V.DEFAULT_VOICE, work)
+        wavs = prepare_voice(voice_name, work)
         voice = voice_track(wavs)
 
     os.makedirs(os.path.join(OUT, "scenes"), exist_ok=True)
@@ -527,7 +530,8 @@ def main():
     silent = os.path.join(OUT, "silent.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i",
                     os.path.join(OUT, "scenes", "list.txt"), "-c", "copy", silent], check=True)
-    final = os.path.join(OUT, "cielo_azul_short.mp4")
+    suffix = "sin_voz" if args.sin_voz else (args.voz or "es_MX-claude-high").replace(":", "_")
+    final = os.path.join(OUT, f"cielo_azul_{suffix}.mp4")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", silent, "-i", os.path.join(OUT, "audio.wav"),
                     "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-af", "loudnorm=I=-14:TP=-1.5",
                     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-shortest", "-movflags", "+faststart",

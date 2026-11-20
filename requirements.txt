@@ -8,3 +8,4 @@ pillow>=10                   # dibujo de fotogramas (videos explicativos)
 opencv-python-headless>=4.9,<5   # detección de caras (Haar); OpenCV 5 quitó CascadeClassifier
 faster-whisper>=1.0.3         # transcripción local (modelos tiny/base/small, int8)
 piper-tts>=1.2                # voz sintética local para videos explicativos (gratis, CPU)
+kokoro-onnx>=0.4.9            # voz más natural (Kokoro, Apache 2.0) sin PyTorch
