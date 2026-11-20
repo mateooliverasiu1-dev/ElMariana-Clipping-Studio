@@ -146,6 +146,35 @@ def badge(img, text, cx, cy, t, color=RED, size=54):
     d.text((cx + 22, cy), text, font=f, anchor="mm", fill=WHITE + (255,))
 
 
+def shake(img: Image.Image, t: float, hits, strength=14) -> Image.Image:
+    """Sacude el cuadro justo después de cada impacto (tiempos en `hits`)."""
+    amp = sum(strength * math.exp(-(t - h) * 9) for h in hits if t >= h)
+    if amp < 0.5:
+        return img
+    dx = int(amp * math.sin(t * 91))
+    dy = int(amp * math.cos(t * 77))
+    return img.transform(img.size, Image.AFFINE, (1, 0, dx, 0, 1, dy), fillcolor=(0, 0, 0, 255))
+
+
+def phone(d: ImageDraw.ImageDraw, cx, cy, w, h):
+    d.rounded_rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], radius=60, fill=(20, 20, 26, 255),
+                        outline=(70, 70, 90, 255), width=8)
+    d.rounded_rectangle([cx - 70, cy - h / 2 + 18, cx + 70, cy - h / 2 + 42], radius=12, fill=(8, 8, 12, 255))
+
+
+def boom(out: np.ndarray, at: float, gain: float = 1.0, rng=None) -> None:
+    """Golpe grave (impacto) sumado a una pista mono."""
+    rng = rng or np.random.default_rng(1)
+    n = len(out)
+    s0, L = int(at * SR), int(1.4 * SR)
+    if s0 >= n or s0 < 0:
+        return
+    seg = np.arange(L) / SR
+    b = np.sin(2 * np.pi * (70 * np.exp(-seg * 2.2) + 28) * seg) * np.exp(-seg * 3)
+    noise = np.convolve(rng.standard_normal(L), np.ones(60) / 60, mode="same") * np.exp(-seg * 6)
+    out[s0:s0 + L] += (gain * (0.6 * b + 0.5 * noise))[:len(out[s0:s0 + L])]
+
+
 def progress_bar(img, gt, total):
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 10], fill=(0, 0, 0, 90))
