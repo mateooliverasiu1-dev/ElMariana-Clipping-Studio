@@ -86,6 +86,7 @@ python explainers/cielo_azul.py --voz kokoro:em_alex                  # -> cielo
 - `explainers/godzilla_24h.py`: "¿Qué pasaría si Godzilla apareciera 24 horas en el mundo real?", con la voz de Alex (Kokoro) por defecto. No dibuja al personaje (tiene derechos de Toho); muestra sus efectos.
 - `explainers/king_kong_24h.py`: "¿Qué pasaría si King Kong apareciera 24 horas en el mundo real?", con la voz de Alex. Tampoco dibuja al personaje; los cálculos de peso y comida están en el encabezado del archivo.
 - `explainers/hulk_24h.py`: "¿Qué pasaría si Hulk apareciera 24 horas en el mundo real?" (peso, salto, ejército, comida, huesos). No dibuja al personaje (es de Marvel); las cuentas están en el encabezado del archivo.
+- `explainers/superman_24h.py`: "¿Qué pasaría si Superman apareciera 24 horas?", con humor mexicano. `--limpio` hace una versión sin groserías. Las groserías fuertes aparecen pocas veces y nunca en la portada, siguiendo las reglas de anuncios de YouTube. No dibuja al personaje (es de DC).
 - `explainers/engine.py`: motor común (voz, ajuste de duración por escena, fundidos, música con ducking, exportación). Para un video nuevo solo escribes el guion y las escenas.
 
 ```bash

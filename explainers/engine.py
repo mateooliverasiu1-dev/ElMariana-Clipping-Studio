@@ -30,6 +30,16 @@ VOICE_LEAD = 0.25   # aire antes de que hable cada escena
 VOICE_TAIL = 0.55   # aire después de la última palabra
 SR = 44100
 
+# Modo "limpio": reemplazos de groserías por versiones suaves (lo activa Explainer.run con --limpio).
+ACTIVE_CLEAN: dict[str, str] = {}
+
+
+def txt(s: str) -> str:
+    """Texto en pantalla o narración, con los reemplazos del modo limpio si está activo."""
+    for bad, good in ACTIVE_CLEAN.items():
+        s = s.replace(bad, good)
+    return s
+
 
 def _pick_font(*paths: str) -> str:
     for p in paths:
@@ -105,7 +115,7 @@ def draw_text(img, text, t, start, y, size=96, color=WHITE, per_word=0.085, max_
     """Texto que entra palabra por palabra. Las palabras con *asterisco* van en amarillo."""
     if t < start:
         return
-    words = [(w.replace("*", ""), w.startswith("*")) for w in text.split()]
+    words = [(w.replace("*", ""), w.startswith("*")) for w in txt(text).split()]
     lines = _layout(words, size, max_w)
     f = font(size)
     line_h = int(size * 1.12)
@@ -121,13 +131,13 @@ def draw_text(img, text, t, start, y, size=96, color=WHITE, per_word=0.085, max_
             if a > 0.01:
                 dy = (1 - p) * 26
                 c = YELLOW if is_hl else color
-                txt = Image.new("RGBA", (int(f.getlength(w)) + 40, line_h + 40), (0, 0, 0, 0))
-                td = ImageDraw.Draw(txt)
+                word_img = Image.new("RGBA", (int(f.getlength(w)) + 40, line_h + 40), (0, 0, 0, 0))
+                td = ImageDraw.Draw(word_img)
                 td.text((25, 27), w, font=f, fill=(0, 0, 0, 150))
                 td.text((20, 20), w, font=f, fill=c + (255,), stroke_width=max(4, size // 14), stroke_fill=(0, 0, 0, 255))
                 if a < 1:
-                    txt.putalpha(txt.getchannel("A").point(lambda v: int(v * a)))
-                img.alpha_composite(txt, (int(x - 20), int(y + li * line_h + dy - 20)))
+                    word_img.putalpha(word_img.getchannel("A").point(lambda v: int(v * a)))
+                img.alpha_composite(word_img, (int(x - 20), int(y + li * line_h + dy - 20)))
             x += f.getlength(w) + space
             i += 1
 
@@ -214,7 +224,7 @@ class Explainer:
     music_fn(total, durs) -> np.ndarray mono a 44.1 kHz (sin normalizar)."""
 
     def __init__(self, slug: str, scenes, music_fn: Callable, default_voice: str = "kokoro:em_alex",
-                 preview_times=None):
+                 preview_times=None, clean_map: dict[str, str] | None = None):
         self.slug = slug
         self.scenes = list(scenes)
         self.music_fn = music_fn
@@ -222,6 +232,7 @@ class Explainer:
         self.preview_times = preview_times or [(i, min(2.5, s[2] / 2)) for i, s in enumerate(scenes)]
         self.out = ROOT / "data" / "explicativos" / slug
         self.durs = [s[2] for s in self.scenes]
+        self.clean_map = clean_map or {}
 
     @property
     def total(self) -> float:
@@ -246,7 +257,7 @@ class Explainer:
         wavs = []
         for i, (name, _, base, text) in enumerate(self.scenes):
             out = work / f"{i + 1:02d}.wav"
-            V.synthesize(text, out, voice=voice_name)
+            V.synthesize(txt(text), out, voice=voice_name)
             vlen = V.wav_duration(out)
             self.durs[i] = round(max(base, VOICE_LEAD + vlen + VOICE_TAIL), 2)
             wavs.append(str(out))
@@ -304,7 +315,11 @@ class Explainer:
         ap.add_argument("modo", nargs="?", default="render", choices=["render", "frames"])
         ap.add_argument("--sin-voz", action="store_true")
         ap.add_argument("--voz", default=None, help=f"por defecto {self.default_voice}")
+        if self.clean_map:
+            ap.add_argument("--limpio", action="store_true", help="sin groserías (versión suave)")
         args = ap.parse_args(argv)
+        global ACTIVE_CLEAN
+        ACTIVE_CLEAN = dict(self.clean_map) if getattr(args, "limpio", False) else {}
         self.out.mkdir(parents=True, exist_ok=True)
 
         if args.modo == "frames":
@@ -338,6 +353,8 @@ class Explainer:
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy",
                         str(silent)], check=True)
         suffix = "sin_voz" if args.sin_voz else voice_name.replace(":", "_")
+        if ACTIVE_CLEAN:
+            suffix += "_limpio"
         final = self.out / f"{self.slug}_{suffix}.mp4"
         tmp = final.with_name(final.stem + ".tmp.mp4")
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(silent), "-i", str(audio), "-map", "0:v", "-map", "1:a",
