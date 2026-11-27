@@ -221,3 +221,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ElMariana Studio: media de trabajo (no subir videos pesados al repo)
+input/
+work/
+output/
+*.mp4
+*.mov
+*.mkv
+*.webm

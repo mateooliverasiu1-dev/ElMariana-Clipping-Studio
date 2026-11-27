@@ -1,42 +1,28 @@
-# ElMariana-Clipping-Studio
-AI-powered YouTube Shorts clipping and editing studio.
 # ElMariana Clipping Studio
 
-AI-assisted video production studio for YouTube Shorts.
+Editor de Shorts/Reels/TikTok manejado por Claude. Tú mandas el video, Claude lo transcribe,
+decide la edición (cortes, subtítulos, zooms, efectos de sonido y visuales) y entrega un MP4
+vertical 1080x1920 listo para subir. 100 % gratis: solo FFmpeg, Whisper local y OpenCV.
 
-## Project
+## Qué hace
+- Subtítulos palabra por palabra con resaltado animado y palabras clave en color (5 estilos).
+- Zooms estratégicos (golpe, suave, empuje lento) enfocados en la cara.
+- 32 efectos de sonido originales generados por código (humor, impacto, transiciones) — sin copyright.
+- Efectos visuales: temblor, flash, blanco y negro, viñeta, tinte rojo, barra de progreso.
+- Encuadre vertical: recorte que sigue la cara, fondo desenfocado, o pantalla dividida (facecam + juego).
+- Jump-cuts automáticos en silencios, reordenar segmentos (gancho al inicio), música con ducking.
+- Audio normalizado a -14 LUFS (estándar de YouTube).
 
-A cloud-based video editing system designed to create original, engaging vertical videos from authorized source material.
+## Uso (lo hace Claude)
+```bash
+python -m studio.transcribe input/video.mp4 --lang es   # -> work/video/transcript.txt
+# Claude escribe work/video/edit.json  (ver EDIT_FORMAT.md)
+python -m studio.render work/video/edit.json --preview  # revisión rápida
+python -m studio.sheet output/video_short_preview.mp4   # hoja de fotogramas para revisar
+python -m studio.render work/video/edit.json            # render final
+```
 
-## Editing style
+Ver `CLAUDE.md` para el flujo completo y `EDIT_FORMAT.md` para todas las opciones.
 
-- Dynamic word-by-word subtitles.
-- Intelligent zooms.
-- Smart speaker framing.
-- Vertical 9:16 video.
-- Target resolution: 1080x1920.
-- Original commentary and contextual editing.
-
-## Architecture
-
-- Python: backend.
-- FFmpeg: video processing.
-- Whisper: speech transcription.
-- OpenCV: visual processing.
-- Claude: AI-assisted development.
-- YouTube Data API: publishing integration.
-
-## Main workflow
-
-1. Import authorized source video.
-2. Transcribe audio.
-3. Detect interesting moments.
-4. Generate candidate clips.
-5. Add dynamic subtitles and zoom effects.
-6. Perform quality checks.
-7. Review and approve.
-8. Prepare YouTube publication.
-
-## Important
-
-Only process material with documented usage rights. No automatic public publishing without human approval.
+## Importante
+Solo material propio o con permiso de uso. Nada se publica sin aprobación humana.
