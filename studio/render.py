@@ -116,6 +116,12 @@ class Timeline:
                 return s.out0 + (t - s.a)
         return None
 
+    def seg_index(self, t: float) -> int:
+        for i, s in enumerate(self.segs):
+            if s.a - 1e-6 <= t < s.b:
+                return i
+        return -1
+
     def to_src(self, t_out: float) -> float:
         for s in self.segs:
             if t_out < s.out0 + s.n / self.fps:
@@ -268,14 +274,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         shown = text.upper() if cfg["uppercase"] else text
         if sub.get("strip_punctuation", True):
             shown = re.sub(r"[.,;:]+$", "", shown)
-        out_words.append({"text": ass_escape(shown), "s": s, "e": max(e, s + 0.08), "raw": text, "em": em})
+        out_words.append({"text": ass_escape(shown), "s": s, "e": max(e, s + 0.08), "raw": text, "em": em, "seg": tl.seg_index(w["start"])})
 
     # ---- agrupar en bloques cortos
     groups: list[list[dict]] = []
     cur: list[dict] = []
     for w in out_words:
         chars = sum(len(x["text"]) + 1 for x in cur) + len(w["text"])
-        if cur and (len(cur) >= max_words or chars > max_chars or w["s"] - cur[-1]["e"] > 0.6):
+        if cur and (len(cur) >= max_words or chars > max_chars or w["s"] - cur[-1]["e"] > 0.6 or w["seg"] != cur[-1]["seg"]):
             groups.append(cur)
             cur = []
         cur.append(w)
